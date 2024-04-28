@@ -58,10 +58,10 @@ module BeamStrucutre
         g_ndofs = m_npts * 6
         ! load points data
         allocate(xyz(1:3, 1:m_npts))
-        call readPoints(xyz)
+        call Beam_ReadPoints(xyz)
         ! load matieral data
         allocate(material(1:8, 1:m_nmaterials))
-        call readMaterials(material)
+        call Beam_ReadMaterials(material)
         ! load and build elements 
         allocate(m_elements(1:m_nelmts))
         call Beam_ReadBuildElements(xyz, material)
@@ -256,9 +256,26 @@ end module BeamStrucutre
 program test
     use BeamStrucutre
     implicit none
-    character (LEN=20):: filename = 'Beam.dat'
-    real(8) :: gamma = 0.75, beta = 0.25, dt = 0.1
-    real(8) :: disp(1:6, 1:6), vel(1:6, 1:6), acc(1:6, 1:6)
-    call Beam_initialise(filename, gamma, beta, dt)
-    call Beam_Solve(disp, vel, acc)
+    character*1 ::     trans
+    double precision :: gamma = 0.75, beta = 0.25
+    double precision :: A(12, 12), x(12), y(12)
+    integer(8) :: i, j, m=12, n=12, lda=12, icx=1, icy=1
+    external         DGEMV
+    do i = 1, 12
+        do j = 1, 12
+            A(i, j) = 0.
+        enddo
+        A(i, i) = 1.
+        x(i) = dble(i)
+        y(i) = 0.
+    enddo
+    trans(1:1) = "T"
+    write(*, *)x, trans
+    !call gemv(M, x, y, 1., 0., 'N')
+    call DGEMV(trans, m, m, gamma, A, lda, x, icx, beta, y, icy)
+    !call dsymv('L', 12, 1., M, 12, x, 1, 0., y, 1)
+    write(*, *)y
+
+    !call Beam_initialise(filename, gamma, beta, dt)
+    !scall Beam_Solve(disp, vel, acc)
 end

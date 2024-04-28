@@ -1,2 +1,1 @@
-ifort *.f90 -c
-ifort BeamStructure.o -o a.out
+ifx    -qmkl-ilp64=sequential   BeamStrucutre.f90
