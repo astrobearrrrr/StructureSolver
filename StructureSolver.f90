@@ -1,5 +1,4 @@
 program main
-    use BeamElement
     implicit none
 
     integer:: nND,nEL,nEQ,nMT
@@ -1493,83 +1492,4 @@ subroutine assembLUM(nEQ,aa,a,i1,j1,k1)
     enddo
     !
     return
-endsubroutine
-
-subroutine cpt_mtx(jBC,x,b,ele,xord0,yord0,zord0,xord,yord,zord,prop,nND,nEL,nEQ,nMT, &
-                   geoFRM,alphaf,gamma,Newmarka0,Newmarka1,dampM,dampK,isjBC,lodEffe,vBC,iter)
-    use BeamElement
-    implicit none
-
-    type(Segment) :: beam(nEL)
-
-    integer:: nND,nEL,nEQ,nMT
-    integer:: ele(nEL,5)
-    real(8):: prop(nMT,10)
-    real(8):: xord0(nND), yord0(nND),zord0(nND)
-    real(8):: xord(nND), yord(nND),zord(nND)
-    real(8):: et(18,18),ek(18,18), ek12(12,12),eg(18,18), eg12(12,12),em(18,18), em12(12,12)
-    real(8):: s,geoFRM(nEL),alphaf,gamma,Newmarka0,Newmarka1,dampM,dampK,lodEffe(nEQ),vBC(nND,6)
-    integer:: isjBC,iter
-
-    integer:: i,j,n,i1,j1,k1,mat,nELt
-    real(8):: e0,g0,a0,r0,b0,zix0,ziy0,ziz0,dx,dy,dz,xl0,xl,xll,xmm,xnn,xl9
-
-    real(8):: b(nEQ),x(nEQ),x18(18),b18(18)
-    integer:: idof(18),jBC(nND,6),iND,iEQ,iEQ2
-
-    b=0.0
-    ! form each element matrix, and assemble
-    do    n=1,nEL
-        i1  = ele(n,1)
-        j1  = ele(n,2)
-        k1  = ele(n,3)
-        nELt= ele(n,4)
-        mat = ele(n,5)
-
-        do  i= 1, 6
-            idof(i)    = (i1-1)*6 + i
-            idof(i+6)  = (j1-1)*6 + i
-        enddo
-        !
-        if    (nELt .eq. 1 .OR. nELt .eq. 2 .OR. nELt .eq. 3) then
-            ! frame
-            ! material props not change
-            e0=prop(mat,1)
-            g0=prop(mat,2)
-            a0=prop(mat,3)
-            r0=prop(mat,4)
-            b0=prop(mat,5)
-            zix0=prop(mat,6)
-            ziy0=prop(mat,7)
-            ziz0=prop(mat,8)
-            dx= xord0(j1) - xord0(i1)
-            dy= yord0(j1) - yord0(i1)
-            dz= zord0(j1) - zord0(i1)
-            xl0=dsqrt(dx*dx+dy*dy+dz*dz)
-            !
-            ! Calculate the mass matrix
-            xl9= xl0
-            call elmmasFRM_D(r0,a0,xl9,zix0,em12,alphaf)
-            beam(n)%m_masMat(1:18,1:18) = 0.0
-            beam(n)%m_masMat(1:12,1:12) = ek(1:12,1:12)
-            !
-            ! Calculate the linear stiffness matrix
-            xl9= xl0
-            call elmstfFRM_D(xl9,zix0,ziy0,ziz0,a0,e0,g0,ek12, nELt)
-            beam(n)%m_stfMat(1:18,1:18) = 0.0
-            beam(n)%m_stfMat(1:12,1:12) = ek(1:12,1:12)
-            !
-            ! Calculate the geometric stiffness matrix
-            !read(igeoFRM,*) sxx
-            s=geoFRM(n)
-            xl9= xl0
-            call elmgeomFRM_D(xl9,eg12,s)
-            call trans3d_D(xll,xmm,xnn,eg12,b0)
-            eg(1:18,1:18)=0.0d0
-            eg(1:12,1:12)=eg12(1:12,1:12)
-
-        endif
-    enddo
-    return
-
 endsubroutine
