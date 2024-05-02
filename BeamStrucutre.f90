@@ -597,10 +597,10 @@ program test
     use BeamStrucutre
     implicit none
     character*1 ::     trans
-    double precision :: gamma = 0.75, beta = 0.25
-    double precision :: A(12, 12), x(12), y(12)
-    integer(8) :: i, j, m=12, n=12, lda=12, icx=1, icy=1
-    external         DGEMV
+    real(8) :: alpha = 1., beta = 0.0
+    real(8) :: A(12, 12), x(12), y(12)
+    integer(8) :: i, j, m=12, lda=12, icx=1, icy=1
+    external         DGEMV, dsymv
     do i = 1, 12
         do j = 1, 12
             A(i, j) = 0.
@@ -611,10 +611,13 @@ program test
     enddo
     trans(1:1) = "T"
     write(*, *)x, trans
-    !call gemv(M, x, y, 1., 0., 'N')
-    call DGEMV(trans, m, m, gamma, A, lda, x, icx, beta, y, icy)
-    !call dsymv('L', 12, 1., M, 12, x, 1, 0., y, 1)
-    write(*, *)y
+    write(*, *) "======DGEMV======="
+    call DGEMV(trans, m, m, alpha, A, lda, x, icx, beta, y, icy)
+    write(*, *)y, trans
+    write(*, *) "======dsymv======="
+    trans(1:1) = "L"
+    call dsymv(trans, m, alpha, A, lda, x, icx, beta, y, icy)
+    write(*, *)y, trans
 
     !call Beam_initialise(filename, gamma, beta, dt)
     !scall Beam_Solve(disp, vel, acc)
