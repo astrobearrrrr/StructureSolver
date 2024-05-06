@@ -1,3 +1,4 @@
+! test example: ISBN 9787040258417 Zeng Pan. P45
 program main
     implicit none
 
@@ -99,7 +100,7 @@ program main
 !   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !   Initialize all triads.
 !   -------------------------------------------------------------------
-    CALL init_triad_D( ele(1:nEL,1:5),xyzful(1:nND,1),xyzful(1:nND,2),xyzful(1:nND,3), &
+    CALL init_triad_D( ele(1:nEL,1:5),xyzful0(1:nND,1),xyzful0(1:nND,2),xyzful0(1:nND,3), &
                       triad_nn(1:3,1:3,1:nND),triad_n1(1:3,1:3,1:nEL),triad_n2(1:3,1:3,1:nEL), &
                       triad_ee(1:3,1:3,1:nEL),nND,nEL ) 
 !   ===============================================================================================
