@@ -6,7 +6,7 @@ module BeamStrucutre
     real(8) :: coeffs(0:7),dampM,dampK,gamma,alphaf
     integer :: m_npts, m_nelmts, m_nmaterials, g_ndofs
     character(LEN=20) :: m_meshfile
-    public :: Segment
+    public :: Segment, Beam_initialise, Beam_Solve
     type :: Segment
         private
         integer :: m_localToGlobal(1:nElmtDofs)
@@ -40,13 +40,13 @@ module BeamStrucutre
         procedure :: MakeTriad_ee => Segment_MakeTriad_ee
     end type Segment
     type(Segment), allocatable :: m_elements(:)
-    real(8), allocatable ::lodInte(:),lodEffe(:),vBC(:),mss(:),lodExte(:)
+    real(8), allocatable ::lodInte(:),lodExte(:),lodEffe(:),vBC(:),mss(:)
 
   contains
-    subroutine Beam_initialise(filename, Newmarkgamma, Newmarkbeta, dt, damp1, damp2, gamma1, alphaf1)
+    subroutine Beam_initialise(filename, Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1, alphaf1)
         implicit none
         character (LEN=20):: filename
-        real(8) :: Newmarkgamma, Newmarkbeta, dt, damp1, damp2, gamma1, alphaf1
+        real(8) :: Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1, alphaf1
         integer :: fileiD = 996
         character (LEN=1000):: buffer
         real(8), allocatable :: xyz(:, :), material(:, :), boundary(:, :)
@@ -59,18 +59,20 @@ module BeamStrucutre
         coeffs(5) = dt * (0.5 * Newmarkgamma / Newmarkbeta - 1.)
         coeffs(6) = dt * (1. - Newmarkgamma)
         coeffs(7) = dt * Newmarkgamma
-        dampM = damp1
-        dampK = damp2
+        dampM = dampM1
+        dampK = dampK1
         gamma = gamma1
         alphaf = alphaf1
         ! load mesh information
         m_meshfile = filename
-        open(unit=fileiD, file = filename, status = 'old')
+        open(unit=fileiD, file = filename )
             read(fileiD,*) buffer
-            read(buffer, *) m_npts, m_nelmts, m_nmaterials
+            read(fileiD,*) m_npts, m_nelmts, m_nmaterials
         close(fileiD)
         g_ndofs = m_npts * 6
-        allocate(lodInte(1:g_ndofs),lodEffe(1:g_ndofs),vBC(1:g_ndofs),mss(1:g_ndofs),lodExte(1:g_ndofs))
+        allocate(vBC(1:g_ndofs),mss(1:g_ndofs))
+        vBC(1:g_ndofs) = 0.0d0
+        mss(1:g_ndofs) = 0.0d0
         ! load points data
         allocate(xyz(1:3, 1:m_npts))
         call Beam_ReadPoints(xyz)
@@ -91,7 +93,7 @@ module BeamStrucutre
         integer :: fileiD = 996, tmpid, i
         character(LEN=1000) :: buffer
 
-        open(unit=fileiD, file = m_meshfile, status = 'old')
+        open(unit=fileiD, file = m_meshfile )
             do i=1,10000
                 read(fileiD,*) buffer
                 buffer = trim(buffer)
@@ -110,7 +112,7 @@ module BeamStrucutre
         integer :: fileiD = 996, tmpid, i
         character(LEN=1000) :: buffer
 
-        open(unit=fileiD, file = m_meshfile, status = 'old')
+        open(unit=fileiD, file = m_meshfile )
             do i=1,10000
                 read(fileiD,*) buffer
                 buffer = trim(buffer)
@@ -129,7 +131,7 @@ module BeamStrucutre
         integer :: fileiD = 996, tmpid, i
         character(LEN=1000) :: buffer
 
-        open(unit=fileiD, file = m_meshfile, status = 'old')
+        open(unit=fileiD, file = m_meshfile )
             do i=1,10000
                 read(fileiD,*) buffer
                 buffer = trim(buffer)
@@ -148,7 +150,7 @@ module BeamStrucutre
         integer :: fileiD = 996, tmpid, n, i, j, k, imat, itype
         character(LEN=1000) :: buffer
 
-        open(unit=fileiD, file = m_meshfile, status = 'old')
+        open(unit=fileiD, file = m_meshfile )
             do n=1,10000
                 read(fileiD,*) buffer
                 buffer = trim(buffer)
@@ -163,6 +165,35 @@ module BeamStrucutre
             enddo
         close(fileiD)
     end subroutine Beam_ReadBuildElements
+
+    subroutine Beam_InitLoad
+        implicit none
+        allocate(lodInte(1:g_ndofs),lodExte(1:g_ndofs),lodEffe(1:g_ndofs))
+        lodInte(1:g_ndofs) = 0.0d0
+        call Beam_ReadExternalLoad
+        lodEffe(1:g_ndofs) = 0.0d0
+    end subroutine Beam_InitLoad
+    subroutine Beam_ReadExternalLoad
+        implicit none
+        real(8) :: load(1:6, 1:m_npts)
+        integer :: fileiD = 996, tmpid, i
+        character(LEN=1000) :: buffer
+
+        open(unit=fileiD, file = m_meshfile )
+            do i=1,10000
+                read(fileiD,*) buffer
+                buffer = trim(buffer)
+                if(buffer(1:12) .eq. 'EXTERNALLOAD') exit
+            enddo
+            read(fileiD,*) m_npts
+            do i = 1,m_npts
+                read(fileiD,*) tmpid, load(1:6,i)
+            enddo
+            do i = 1,m_npts
+                lodExte((i-1)*6+1:(i-1)*6+6) = load(1:6,i)
+            enddo
+        close(fileiD)
+    end subroutine Beam_ReadExternalLoad
     
     subroutine Beam_UpdateMatrix
         implicit none
@@ -182,31 +213,32 @@ module BeamStrucutre
         return
     end subroutine Beam_UpdateBoundaryCond
 
-    subroutine Beam_Solve(dspO, velO, accO, dsp, vel, acc)
+    subroutine Beam_Solve(maxDynamic, maxNewtonRaphson, dtol)
         implicit none
-        real(8), intent(inout) :: dspO(1:6, 1:m_npts), velO(1:6, 1:m_npts), accO(1:6, 1:m_npts)
-        real(8), intent(inout) :: dsp(1:6, 1:m_npts), vel(1:6, 1:m_npts), acc(1:6, 1:m_npts)
-        real(8) :: dspn(1:6, 1:m_npts), rhs(1:6, 1:g_ndofs)
+        real(8) :: dspO(1:6, 1:m_npts), velO(1:6, 1:m_npts), accO(1:6, 1:m_npts)
+        real(8) :: dsp(1:6, 1:m_npts), vel(1:6, 1:m_npts), acc(1:6, 1:m_npts)
+        real(8) :: dspn(1:g_ndofs)
         integer :: maxDynamic, maxNewtonRaphson, i, j
-        logical :: testconvergence
+        real(8) :: dnorm, dtol
         ! solve the next dispalce, velocity and acceleration using CG method
+        call Beam_FormMss
+        call Beam_InitTriad
+        call Beam_InitLoad
         do i = 1, maxDynamic
-            call Beam_UpdateMatrix
             call Beam_InitDspVelAcc(dspO, velO, accO, dsp, vel, acc)
-            call Beam_FormMss
-            call Beam_InitTriad
+            dnorm=1.0d0
             do j = 1, maxNewtonRaphson
                 call Beam_UpdateMatrix
-                call Beam_LoadInternal
-                call Beam_UpdateRHS(rhs,dspO,dsp,vel,acc)
+                call Beam_UpdateInternalLoad
+                call Beam_UpdateLoad(dspO,dsp,vel,acc)
                 call Beam_UpdateBoundaryCond(j)
-                call CG_Solve(dspn, rhs)
-                call Beam_UpdateDsp(j, dspn, dsp)
-                call Beam_UpdateVelAcc(dspO, velO, accO, dsp, vel, acc)
+                call CG_Solve(dspn, lodEffe)
+                call Beam_UpdateDsp(j, dspn, dsp, dnorm)
                 call Beam_UpdateTriad
                 call Beam_MakeTriadElement
-                if(testconvergence) exit
+                if(dnorm .le. dtol) exit
             enddo
+            call Beam_UpdateVelAcc(dspO, velO, accO, dsp, vel, acc)
         enddo
         
     end subroutine Beam_Solve
@@ -223,25 +255,21 @@ module BeamStrucutre
         acc(1:6, 1:m_npts) = accO(1:6, 1:m_npts)
     end subroutine Beam_InitDspVelAcc
 
-    subroutine CG_Solve(dspn, b)
+    subroutine CG_Solve(x, b)
         implicit none
-        real(8) :: dspn(1:6, 1:m_npts), rhs(1:6, 1:g_ndofs)
-        !, b(1:6, 1:g_ndofs) ! todo move local arrary to module variable
-        real(8):: b(g_ndofs)
-
-        real(8):: x(g_ndofs), r(g_ndofs), p(g_ndofs), Ap(g_ndofs)
+        real(8) :: x(1:g_ndofs), b(1:g_ndofs), r(1:g_ndofs), p(1:g_ndofs), Ap(1:g_ndofs)
         integer :: iter, max_iter
-        double precision :: alpha, beta, rsold, rsnew
-        
-        
-        ! initialize the solution vector x to 0.
-        x = 0.0
-        ! initialize the residual vector. r = b - matmul(A, x)
-        call Beam_MatrixMultipy(x, Ap)
-        r=b-Ap
-        p = r
+        double precision :: alpha, beta, rsold, rsnew, err
         ! maximum iteration count.
         max_iter = 10000
+        err = 1d-10
+        ! initialize the solution vector x to 0.
+        x(1:g_ndofs) = 0.0d0
+        ! initialize the residual vector. r = b - matmul(A, x)
+        call Beam_MatrixMultipy(x, Ap)
+        r = b-Ap
+        p = r
+
         rsold = dot_product(r, r)
         do iter = 1, max_iter
             ! matrix free method, Calculate the matrix-vector product. Ap = matmul(A, p)
@@ -250,7 +278,7 @@ module BeamStrucutre
             x = x + alpha * p
             r = r - alpha * Ap
             rsnew = dot_product(r, r)
-            if(sqrt(rsnew) < 1e-10) exit
+            if(sqrt(rsnew) < err) exit
             beta = rsnew/rsold
             p = r + beta * p
             rsold = rsnew
@@ -258,14 +286,14 @@ module BeamStrucutre
         return
     end subroutine CG_Solve
 
-    subroutine Beam_UpdateDsp(iter, dspn, dsp)
+    subroutine Beam_UpdateDsp(iter, dspn, dsp, dnorm)
         implicit none
-        real(8) :: dspn(1:6, 1:m_npts), dspnn(1:6, 1:m_npts)
+        real(8) :: dspn(1:g_ndofs), dspnn(1:6, 1:m_npts)
         real(8), intent(inout) :: dsp(1:6, 1:m_npts)
-        real(8) :: beta0,beta,zi,z0,maxramp
-        integer :: iter
-        beta0 =1.0d0
-        maxramp =0
+        real(8) :: beta0,beta,zi,z0,maxramp,dnorm
+        integer :: iter,i,j,node0,node1
+        beta0 = 1.0d0
+        maxramp = 0
         if    (iter <= maxramp) then
             zi=2.0d0**(iter)
             z0=2.0d0**(maxramp)
@@ -273,8 +301,19 @@ module BeamStrucutre
         else
             beta=1.0d0*beta0
         endif
-        dspnn(1:6, 1:m_npts)= beta*dspn(1:6, 1:m_npts)
+        do i = 1, m_npts
+            dspnn(1:6,i)= beta*dspn((i-1)*6+1:(i-1)*6+6)
+        enddo
         dsp(1:6, 1:m_npts)= dsp(1:6, 1:m_npts) + dspnn(1:6, 1:m_npts)
+        do i = 1, m_nelmts
+            do j = 1,6
+                node0 = (m_elements(i)%m_localToGlobal(j)+5)/6
+                node1 = (m_elements(i)%m_localToGlobal(j+6)+5)/6
+            enddo
+            m_elements(i)%x1(1:6) = m_elements(i)%x0(1:6) + dsp(1:6, node0)
+            m_elements(i)%x1(7:12) = m_elements(i)%x0(7:12) + dsp(1:6, node1)
+        enddo
+        dnorm=dabs(maxval(dspnn(1:6, 1:m_npts)**2))
         return
     end subroutine Beam_UpdateDsp
     subroutine Beam_UpdateVelAcc(dspO, velO, accO, dsp, vel, acc)
@@ -286,40 +325,39 @@ module BeamStrucutre
         return
     end subroutine
 
-    subroutine  Beam_UpdateRHS(b,dspO,dsp,vel,acc)
+    subroutine  Beam_UpdateLoad(dspO,dsp,vel,acc)
         implicit none
         real(8), intent(inout) :: dspO(1:6, 1:m_npts)
         real(8), intent(inout) :: dsp(1:6, 1:m_npts), vel(1:6, 1:m_npts), acc(1:6, 1:m_npts)
-        real(8) :: b(1:g_ndofs)
         real(8) :: wk1(1:g_ndofs),wk2(1:g_ndofs)
-        integer :: i,j,n,temp
+        integer :: i,j,temp
         do j=1, m_npts
-            do    i= 1, 6
+            do i= 1, 6
                 temp = (j-1)*6+i
                 lodEffe(temp)=lodExte(temp)-lodInte(temp)+(coeffs(0)*(dspO(i,j)-dsp(i,j))+coeffs(2)*vel(i,j)+coeffs(3)*acc(i,j))*mss(i)   &
                                                 +(coeffs(1)*(dspO(i,j)-dsp(i,j))+coeffs(4)*vel(i,j)+coeffs(5)*acc(i,j))*dampM*mss(i)
             enddo
-        enddo
-        do j=1, m_npts
-            if    (dampK .gt. 0.0d0) then
-                do    i= 1, 6
+
+            if (dampK .gt. 0.0d0) then
+                do i= 1, 6
                     temp = (j-1)*6+i
-                    wk1(temp)= coeffs(1)*(dspO(i,j)-dsp(i,j)) +coeffs(4)*vel(i,j) +coeffs(5)*acc(i,j)
+                    wk1(temp)= coeffs(1)*(dspO(i,j)-dsp(i,j)) + coeffs(4)*vel(i,j) +coeffs(5)*acc(i,j)
                 enddo
 
                 call Beam_DampMatrixMultipy(wk1, wk2)
 
-                do    i= 1, g_ndofs
+                do i= 1, g_ndofs
                     lodEffe(i) = lodEffe(i) + dampK*wk2(i)
                 enddo
             endif
         enddo
-    end subroutine Beam_UpdateRHS
+    end subroutine Beam_UpdateLoad
 
     subroutine Beam_MatrixMultipy(x, b)
         implicit none
         real(8) :: x(1:g_ndofs), b(1:g_ndofs)
         integer :: i
+        b(1:g_ndofs) = 0.0d0
         do i=1,m_nelmts
             call m_elements(i)%Multiply(x, b)
         enddo
@@ -356,16 +394,16 @@ module BeamStrucutre
         this%x1(1:12) = this%x0(1:12)
         this%bc(1:6) = boundary(1:6, p0Id)
         this%bc(7:12) = boundary(1:6, p1Id)
-        this%dx0   = this%x0(1) - this%x0(7)
-        this%dy0   = this%x0(2) - this%x0(8)
-        this%dz0   = this%x0(3) - this%x0(9)
+        this%dx0   = this%x0(7) - this%x0(1)
+        this%dy0   = this%x0(8) - this%x0(2)
+        this%dz0   = this%x0(9) - this%x0(3)
         this%len0 = dsqrt(this%dx0*this%dx0+this%dy0*this%dy0+this%dz0*this%dz0)
         this%xll0=this%dx0/this%len0
         this%xmm0=this%dy0/this%len0
         this%xnn0=this%dz0/this%len0
-        this%dx1   = this%x1(1) - this%x1(7)
-        this%dy1   = this%x1(2) - this%x1(8)
-        this%dz1   = this%x1(3) - this%x1(9)
+        this%dx1   = this%x1(7) - this%x1(1)
+        this%dy1   = this%x1(8) - this%x1(2)
+        this%dz1   = this%x1(9) - this%x1(3)
         this%len1 = dsqrt(this%dx1*this%dx1+this%dy1*this%dy1+this%dz1*this%dz1)
         this%xll1=this%dx1/this%len1
         this%xmm1=this%dy1/this%len1
@@ -410,7 +448,7 @@ module BeamStrucutre
     end subroutine Segment_DampMultiply
 
     subroutine Segment_UpdateMatrix(this)
-        class(Segment) :: this
+        class(Segment), intent(inout) :: this
         real(8) :: temp(nElmtDofs,nElmtDofs)
         !update m_coefMat
         call this%FormMassMatrix
@@ -421,7 +459,7 @@ module BeamStrucutre
         if(dampK .gt. 0.0d0) then
             this%m_coefMat = this%m_coefMat + coeffs(1) * dampK * this%m_stfMat
         endif
-        call this%RotateMatrix(this%xll1,this%xnn1,this%xnn1)
+        call this%RotateMatrix(this%xll1,this%xmm1,this%xnn1)
         temp = this%m_coefMat
         call this%RKR(temp)
         this%m_coefMat = temp
@@ -607,14 +645,7 @@ module BeamStrucutre
         implicit none
         class(Segment), intent(inout) :: this
         real(8):: r(3,3)
-        real(8):: dx0,dy0,dz0,l,m,n,beta,pi,sb,cb,d,Invd
-
-        dx0   = this%x0(1) - this%x0(7)
-        dy0   = this%x0(2) - this%x0(8)
-        dz0   = this%x0(3) - this%x0(9)
-        l=dx0/this%len0
-        m=dy0/this%len0
-        n=dz0/this%len0
+        real(8):: l,m,n,beta,pi,sb,cb,d,Invd
 
         beta = this%m_property(5)
 
@@ -837,7 +868,7 @@ module BeamStrucutre
         return
     end subroutine Segment_BodyStress_D
 
-    subroutine Beam_LoadInternal
+    subroutine Beam_UpdateInternalLoad
         implicit none
         integer :: i
         lodInte = 0.0
@@ -845,7 +876,7 @@ module BeamStrucutre
             call m_elements(i)%BodyStress
         enddo
         return
-    end subroutine Beam_LoadInternal
+    end subroutine Beam_UpdateInternalLoad
 
     subroutine Segment_get_angle_triad(triad_11,triad_22,tx,ty,tz)
         implicit none
@@ -1036,11 +1067,12 @@ module BeamStrucutre
     subroutine Beam_FormMss
         implicit none
         real(8):: tempmss(nElmtDofs,nElmtDofs)
-        integer:: i,j
+        integer:: i
     
         ! zero array before assembling
         mss(1:g_ndofs)=0.0d0
         do i = 1, m_nelmts
+            call m_elements(i)%FormMassMatrix
             tempmss = m_elements(i)%m_masMat
             call m_elements(i)%RotateMatrix(m_elements(i)%xll0,m_elements(i)%xmm0,m_elements(i)%xnn0)
             call m_elements(i)%RKR(tempmss)
@@ -1077,32 +1109,35 @@ module BeamStrucutre
 
 end module BeamStrucutre
 
-program test
+program main
     use BeamStrucutre
     implicit none
-    character*1 ::     trans
-    real(8) :: alpha = 1., beta = 0.0
-    real(8) :: A(12, 12), x(12), y(12)
-    integer(8) :: i, j, m=12, lda=12, icx=1, icy=1
-    external         DGEMV, dsymv
-    do i = 1, 12
-        do j = 1, 12
-            A(i, j) = 0.
-        enddo
-        A(i, i) = 1.
-        x(i) = dble(i)
-        y(i) = 0.
-    enddo
-    trans(1:1) = "T"
-    write(*, *)x, trans
-    write(*, *) "======DGEMV======="
-    call DGEMV(trans, m, m, alpha, A, lda, x, icx, beta, y, icy)
-    write(*, *)y, trans
-    write(*, *) "======dsymv======="
-    trans(1:1) = "L"
-    call dsymv(trans, m, alpha, A, lda, x, icx, beta, y, icy)
-    write(*, *)y, trans
-
-    !call Beam_initialise(filename, gamma, beta, dt)
-    !scall Beam_Solve(dsp, vel, acc)
-end
+    ! character*1 ::     trans
+    ! real(8) :: alpha = 1., beta = 0.0
+    ! real(8) :: A(12, 12), x(12), y(12)
+    ! integer(8) :: i, j, m=12, lda=12, icx=1, icy=1
+    ! external         DGEMV, dsymv
+    ! do i = 1, 12
+    !     do j = 1, 12
+    !         A(i, j) = 0.
+    !     enddo
+    !     A(i, i) = 1.
+    !     x(i) = dble(i)
+    !     y(i) = 0.
+    ! enddo
+    ! trans(1:1) = "T"
+    ! write(*, *)x, trans
+    ! write(*, *) "======DGEMV======="
+    ! call DGEMV(trans, m, m, alpha, A, lda, x, icx, beta, y, icy)
+    ! write(*, *)y, trans
+    ! write(*, *) "======dsymv======="
+    ! trans(1:1) = "L"
+    ! call dsymv(trans, m, alpha, A, lda, x, icx, beta, y, icy)
+    ! write(*, *)y, trans
+    
+    ! test example: ISBN 9787040258417 Zeng Pan. P45
+    character (LEN=20)::filename
+    filename = 'Beam.dat'
+    call Beam_initialise(filename, 5d-1, 1d0, 5d0, 0d0, 0d0, 1d0, 0d0)
+    call Beam_Solve(1, 200, 1d-3)
+end program
