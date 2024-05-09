@@ -12,7 +12,7 @@ module BeamStrucutre
         integer :: m_localToGlobal(1:nElmtDofs)
         real(8) :: x0(1:nElmtDofs),x1(1:nElmtDofs)
         real(8) :: dx0, dy0, dz0, dx1, dy1, dz1, xll0, xmm0, xnn0, xll1, xmm1, xnn1, len0, len1
-        real(8) :: bc(1:nElmtDofs), geoFRM
+        real(8) :: bc(1:nElmtDofs), geoFRM,stf(1:nElmtDofs, 1:nElmtDofs)
         real(8) :: triad_ee(3,3),triad_n1(3,3),triad_n2(3,3)
         real(8) :: m_property(1:8)
         real(8) :: m_coefMat(1:nElmtDofs, 1:nElmtDofs)
@@ -25,12 +25,12 @@ module BeamStrucutre
         procedure :: init => Segment_init
         procedure :: Multiply => Segment_Multiply
         procedure :: UpdateMatrix => Segment_UpdateMatrix
+        procedure :: UpdateLoad => Segment_UpdateLoad
         procedure :: LocToGlobal => Segment_LocToGlobal
         procedure :: GlobalToLoc => Segment_GlobalToLoc
         procedure :: FormMassMatrix => Segment_FormMassMatrix
         procedure :: FormStiffMatrix => Segment_FormStiffMatrix
         procedure :: FormGeomMatrix => Segment_FormGeomMatrix
-        procedure :: DampMultiply => Segment_DampMultiply
         procedure :: RotateMatrix => Segment_RotateMatrix
         procedure :: RKR => Segment_RKR
         procedure :: BoundaryCond => Segment_BoundaryCond
@@ -40,7 +40,7 @@ module BeamStrucutre
         procedure :: MakeTriad_ee => Segment_MakeTriad_ee
     end type Segment
     type(Segment), allocatable :: m_elements(:)
-    real(8), allocatable ::lodInte(:),lodExte(:),lodEffe(:),vBC(:),mss(:)
+    real(8), allocatable ::lodInte(:),lodExte(:),lodEffe(:),vBC(:)
 
   contains
     subroutine Beam_initialise(filename, Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1, alphaf1)
@@ -70,9 +70,8 @@ module BeamStrucutre
             read(fileiD,*) m_npts, m_nelmts, m_nmaterials
         close(fileiD)
         g_ndofs = m_npts * 6
-        allocate(vBC(1:g_ndofs),mss(1:g_ndofs))
+        allocate(vBC(1:g_ndofs))
         vBC(1:g_ndofs) = 0.0d0
-        mss(1:g_ndofs) = 0.0d0
         ! load points data
         allocate(xyz(1:3, 1:m_npts))
         call Beam_ReadPoints(xyz)
@@ -194,24 +193,7 @@ module BeamStrucutre
             enddo
         close(fileiD)
     end subroutine Beam_ReadExternalLoad
-    
-    subroutine Beam_UpdateMatrix
-        implicit none
-        integer :: i
-        do i = 1, m_nelmts
-            call m_elements(i)%UpdateMatrix
-        enddo
-        return
-    end subroutine Beam_UpdateMatrix
 
-    subroutine Beam_UpdateBoundaryCond(iter)
-        implicit none
-        integer :: i,iter
-        do i = 1, m_nelmts
-            call m_elements(i)%BoundaryCond(iter)
-        enddo
-        return
-    end subroutine Beam_UpdateBoundaryCond
 
     subroutine Beam_Solve(maxDynamic, maxNewtonRaphson, dtol)
         implicit none
@@ -221,39 +203,38 @@ module BeamStrucutre
         integer :: maxDynamic, maxNewtonRaphson, i, j
         real(8) :: dnorm, dtol
         ! solve the next dispalce, velocity and acceleration using CG method
-        call Beam_FormMss
-        call Beam_InitTriad
+        call Beam_InitTriadANDFormMass
         call Beam_InitLoad
+        call Beam_InitDspVelAcc(dsp, vel, acc)
         do i = 1, maxDynamic
-            call Beam_InitDspVelAcc(dspO, velO, accO, dsp, vel, acc)
+            call Beam_InitDspVelAccATTimeT(dspO, velO, accO, dsp, vel, acc)
             dnorm=1.0d0
             do j = 1, maxNewtonRaphson
-                call Beam_UpdateMatrix
-                call Beam_UpdateInternalLoad
-                call Beam_UpdateLoad(dspO,dsp,vel,acc)
-                call Beam_UpdateBoundaryCond(j)
+                call Beam_UpdateMatrixANDLoad(j,dspO,dsp,vel,acc)
                 call CG_Solve(dspn, lodEffe)
-                call Beam_UpdateDsp(j, dspn, dsp, dnorm)
-                call Beam_UpdateTriad
-                call Beam_MakeTriadElement
+                call Beam_UpdateDspANDTride(j, dspn, dsp, dnorm)
                 if(dnorm .le. dtol) exit
             enddo
             call Beam_UpdateVelAcc(dspO, velO, accO, dsp, vel, acc)
         enddo
-        
+        return
     end subroutine Beam_Solve
 
-    subroutine Beam_InitDspVelAcc(dspO, velO, accO, dsp, vel, acc)
+    subroutine Beam_InitDspVelAcc(dsp, vel, acc)
+        implicit none
+        real(8), intent(inout) :: dsp(1:6, 1:m_npts), vel(1:6, 1:m_npts), acc(1:6, 1:m_npts)
+        dsp(1:6, 1:m_npts) = 0.0d0
+        vel(1:6, 1:m_npts) = 0.0d0
+        acc(1:6, 1:m_npts) = 0.0d0
+    end subroutine Beam_InitDspVelAcc
+    subroutine Beam_InitDspVelAccATTimeT(dspO, velO, accO, dsp, vel, acc)
         implicit none
         real(8), intent(inout) :: dspO(1:6, 1:m_npts), velO(1:6, 1:m_npts), accO(1:6, 1:m_npts)
         real(8), intent(inout) :: dsp(1:6, 1:m_npts), vel(1:6, 1:m_npts), acc(1:6, 1:m_npts)
-        dspO(1:6, 1:m_npts) = 0.0d0
-        velO(1:6, 1:m_npts) = 0.0d0
-        accO(1:6, 1:m_npts) = 0.0d0
-        dsp(1:6, 1:m_npts) = dspO(1:6, 1:m_npts)
-        vel(1:6, 1:m_npts) = velO(1:6, 1:m_npts)
-        acc(1:6, 1:m_npts) = accO(1:6, 1:m_npts)
-    end subroutine Beam_InitDspVelAcc
+        dspO(1:6, 1:m_npts) = dsp(1:6, 1:m_npts)
+        velO(1:6, 1:m_npts) = vel(1:6, 1:m_npts)
+        accO(1:6, 1:m_npts) = acc(1:6, 1:m_npts)
+    end subroutine Beam_InitDspVelAccATTimeT
 
     subroutine CG_Solve(x, b)
         implicit none
@@ -286,12 +267,12 @@ module BeamStrucutre
         return
     end subroutine CG_Solve
 
-    subroutine Beam_UpdateDsp(iter, dspn, dsp, dnorm)
+    subroutine Beam_UpdateDspANDTride(iter, dspn, dsp, dnorm)
         implicit none
         real(8) :: dspn(1:g_ndofs), dspnn(1:6, 1:m_npts)
         real(8), intent(inout) :: dsp(1:6, 1:m_npts)
         real(8) :: beta0,beta,zi,z0,maxramp,dnorm
-        integer :: iter,i,j,node0,node1
+        integer :: iter,i,node0,node1
         beta0 = 1.0d0
         maxramp = 0
         if    (iter <= maxramp) then
@@ -304,18 +285,29 @@ module BeamStrucutre
         do i = 1, m_npts
             dspnn(1:6,i)= beta*dspn((i-1)*6+1:(i-1)*6+6)
         enddo
-        dsp(1:6, 1:m_npts)= dsp(1:6, 1:m_npts) + dspnn(1:6, 1:m_npts)
+        dsp(1:6, 1:m_npts) = dsp(1:6, 1:m_npts) + dspnn(1:6, 1:m_npts)
         do i = 1, m_nelmts
-            do j = 1,6
-                node0 = (m_elements(i)%m_localToGlobal(j)+5)/6
-                node1 = (m_elements(i)%m_localToGlobal(j+6)+5)/6
-            enddo
+            node0 = (m_elements(i)%m_localToGlobal(1)+5)/6
+            node1 = (m_elements(i)%m_localToGlobal(7)+5)/6
+            ! UpdateElementPosition
             m_elements(i)%x1(1:6) = m_elements(i)%x0(1:6) + dsp(1:6, node0)
             m_elements(i)%x1(7:12) = m_elements(i)%x0(7:12) + dsp(1:6, node1)
+            m_elements(i)%dx1  = m_elements(i)%x1(7) - m_elements(i)%x1(1)
+            m_elements(i)%dy1  = m_elements(i)%x1(8) - m_elements(i)%x1(2)
+            m_elements(i)%dz1  = m_elements(i)%x1(9) - m_elements(i)%x1(3)
+            m_elements(i)%len1 = dsqrt(m_elements(i)%dx1*m_elements(i)%dx1+m_elements(i)%dy1*m_elements(i)%dy1+m_elements(i)%dz1*m_elements(i)%dz1)
+            m_elements(i)%xll1 = m_elements(i)%dx1/m_elements(i)%len1
+            m_elements(i)%xmm1 = m_elements(i)%dy1/m_elements(i)%len1
+            m_elements(i)%xnn1 = m_elements(i)%dz1/m_elements(i)%len1
+            ! UpdateNodeTriad
+            call m_elements(i)%UpdateTriad_D(dspnn)
+            ! MakeElementTriad
+            call m_elements(i)%MakeTriad_ee
         enddo
         dnorm=dabs(maxval(dspnn(1:6, 1:m_npts)**2))
         return
-    end subroutine Beam_UpdateDsp
+    end subroutine Beam_UpdateDspANDTride
+
     subroutine Beam_UpdateVelAcc(dspO, velO, accO, dsp, vel, acc)
         implicit none
         real(8), intent(inout) :: dspO(1:6, 1:m_npts), velO(1:6, 1:m_npts), accO(1:6, 1:m_npts)
@@ -325,51 +317,52 @@ module BeamStrucutre
         return
     end subroutine
 
-    subroutine  Beam_UpdateLoad(dspO,dsp,vel,acc)
+    subroutine Beam_UpdateMatrixANDLoad(iter,dspO,dsp,vel,acc)
         implicit none
         real(8), intent(inout) :: dspO(1:6, 1:m_npts)
         real(8), intent(inout) :: dsp(1:6, 1:m_npts), vel(1:6, 1:m_npts), acc(1:6, 1:m_npts)
-        real(8) :: wk1(1:g_ndofs),wk2(1:g_ndofs)
-        integer :: i,j,temp
-        do j=1, m_npts
-            do i= 1, 6
-                temp = (j-1)*6+i
-                lodEffe(temp)=lodExte(temp)-lodInte(temp)+(coeffs(0)*(dspO(i,j)-dsp(i,j))+coeffs(2)*vel(i,j)+coeffs(3)*acc(i,j))*mss(i)   &
-                                                +(coeffs(1)*(dspO(i,j)-dsp(i,j))+coeffs(4)*vel(i,j)+coeffs(5)*acc(i,j))*dampM*mss(i)
+        integer :: i,iter
+        
+        lodInte = 0.0d0
+        do i = 1, m_nelmts
+            call m_elements(i)%UpdateMatrix
+            call m_elements(i)%BodyStress
+        enddo
+        lodEffe = lodExte - lodInte
+        do i = 1, m_nelmts
+            call m_elements(i)%UpdateLoad(lodEffe,dspO,dsp,vel,acc)
+            call m_elements(i)%BoundaryCond(iter)
+        enddo
+    end subroutine
+
+    subroutine Segment_UpdateLoad(this,b,dspO,dsp,vel,acc)
+        implicit none
+        class(Segment), intent(inout) :: this
+        real(8) :: b(1:g_ndofs)
+        real(8) :: dspO(1:6, 1:m_npts)
+        real(8) :: dsp(1:6, 1:m_npts), vel(1:6, 1:m_npts), acc(1:6, 1:m_npts)
+        real(8) :: mss(1:nElmtDofs),wk1(1:nElmtDofs),wk2(1:nElmtDofs)
+        integer :: i,node0,node1
+        node0 = (this%m_localToGlobal(1)+5)/6
+        node1 = (this%m_localToGlobal(7)+5)/6
+        do i = 1,6
+            mss(i) = (coeffs(0)*(dspO(i,node0)-dsp(i,node0))+coeffs(2)*vel(i,node0)+coeffs(3)*acc(i,node0))*this%m_masMat(i,i)   &
+                                    +(coeffs(1)*(dspO(i,node0)-dsp(i,node0))+coeffs(4)*vel(i,node0)+coeffs(5)*acc(i,node0))*dampM*this%m_masMat(i,i)
+            mss(i+6) = (coeffs(0)*(dspO(i,node1)-dsp(i,node1))+coeffs(2)*vel(i,node1)+coeffs(3)*acc(i,node1))*this%m_masMat(i+6,i+6)   &
+                                    +(coeffs(1)*(dspO(i,node1)-dsp(i,node1))+coeffs(4)*vel(i,node1)+coeffs(5)*acc(i,node1))*dampM*this%m_masMat(i+6,i+6)
+        enddo
+        call this%LocToGlobal(mss, b)
+        if (dampK .gt. 0.0d0) then
+            do i = 1,6
+                wk1(i)= coeffs(1)*(dspO(i,node0)-dsp(i,node0)) + coeffs(4)*vel(i,node0) +coeffs(5)*acc(i,node0)
+                wk1(i+6)= coeffs(1)*(dspO(i,node1)-dsp(i,node1)) + coeffs(4)*vel(i,node1) +coeffs(5)*acc(i,node1)
             enddo
+            wk2 = dampK*matmul(this%m_stfMat, wk1)
+            call this%LocToGlobal(wk2, b)
+        endif
+        return
+    end subroutine Segment_UpdateLoad
 
-            if (dampK .gt. 0.0d0) then
-                do i= 1, 6
-                    temp = (j-1)*6+i
-                    wk1(temp)= coeffs(1)*(dspO(i,j)-dsp(i,j)) + coeffs(4)*vel(i,j) +coeffs(5)*acc(i,j)
-                enddo
-
-                call Beam_DampMatrixMultipy(wk1, wk2)
-
-                do i= 1, g_ndofs
-                    lodEffe(i) = lodEffe(i) + dampK*wk2(i)
-                enddo
-            endif
-        enddo
-    end subroutine Beam_UpdateLoad
-
-    subroutine Beam_MatrixMultipy(x, b)
-        implicit none
-        real(8) :: x(1:g_ndofs), b(1:g_ndofs)
-        integer :: i
-        b(1:g_ndofs) = 0.0d0
-        do i=1,m_nelmts
-            call m_elements(i)%Multiply(x, b)
-        enddo
-    end subroutine Beam_MatrixMultipy
-    subroutine Beam_DampMatrixMultipy(x, b)
-        implicit none
-        real(8) :: x(1:g_ndofs), b(1:g_ndofs)
-        integer :: i
-        do i=1,m_nelmts
-            call m_elements(i)%DampMultiply(x, b)
-        enddo
-    end subroutine Beam_DampMatrixMultipy
 
     subroutine Segment_init(this, p0Id, p1Id, xyz, material, boundary)
         class(Segment), intent(inout) :: this
@@ -394,21 +387,31 @@ module BeamStrucutre
         this%x1(1:12) = this%x0(1:12)
         this%bc(1:6) = boundary(1:6, p0Id)
         this%bc(7:12) = boundary(1:6, p1Id)
-        this%dx0   = this%x0(7) - this%x0(1)
-        this%dy0   = this%x0(8) - this%x0(2)
-        this%dz0   = this%x0(9) - this%x0(3)
+        this%dx0  = this%x0(7) - this%x0(1)
+        this%dy0  = this%x0(8) - this%x0(2)
+        this%dz0  = this%x0(9) - this%x0(3)
         this%len0 = dsqrt(this%dx0*this%dx0+this%dy0*this%dy0+this%dz0*this%dz0)
-        this%xll0=this%dx0/this%len0
-        this%xmm0=this%dy0/this%len0
-        this%xnn0=this%dz0/this%len0
-        this%dx1   = this%x1(7) - this%x1(1)
-        this%dy1   = this%x1(8) - this%x1(2)
-        this%dz1   = this%x1(9) - this%x1(3)
+        this%xll0 = this%dx0/this%len0
+        this%xmm0 = this%dy0/this%len0
+        this%xnn0 = this%dz0/this%len0
+        this%dx1  = this%x1(7) - this%x1(1)
+        this%dy1  = this%x1(8) - this%x1(2)
+        this%dz1  = this%x1(9) - this%x1(3)
         this%len1 = dsqrt(this%dx1*this%dx1+this%dy1*this%dy1+this%dz1*this%dz1)
-        this%xll1=this%dx1/this%len1
-        this%xmm1=this%dy1/this%len1
-        this%xnn1=this%dz1/this%len1
+        this%xll1 = this%dx1/this%len1
+        this%xmm1 = this%dy1/this%len1
+        this%xnn1 = this%dz1/this%len1
     end subroutine Segment_init
+
+    subroutine Beam_MatrixMultipy(x, b)
+        implicit none
+        real(8) :: x(1:g_ndofs), b(1:g_ndofs)
+        integer :: i
+        b(1:g_ndofs) = 0.0d0
+        do i=1,m_nelmts
+            call m_elements(i)%Multiply(x, b)
+        enddo
+    end subroutine Beam_MatrixMultipy
 
     subroutine Segment_GlobalToLoc(this, x, lx)
         class(Segment), intent(in) :: this
@@ -438,31 +441,24 @@ module BeamStrucutre
         lb = matmul(this%m_coefMat, lx)
         call this%LocToGlobal(lb, b)
     end subroutine Segment_Multiply
-    subroutine Segment_DampMultiply(this, x, b)
-        class(Segment), intent(in) :: this
-        real(8) :: x(1:g_ndofs), b(1:g_ndofs)
-        real(8) :: lx(1:nElmtDofs), lb(1:nElmtDofs)
-        call this%GlobalToLoc(x, lx)
-        lb = matmul(this%m_masMat, lx)
-        call this%LocToGlobal(lb, b)
-    end subroutine Segment_DampMultiply
 
     subroutine Segment_UpdateMatrix(this)
         class(Segment), intent(inout) :: this
-        real(8) :: temp(nElmtDofs,nElmtDofs)
         !update m_coefMat
-        call this%FormMassMatrix
         call this%FormStiffMatrix
         call this%FormGeomMatrix
+        this%stf = this%m_stfMat
+        call this%RotateMatrix(this%xll1,this%xmm1,this%xnn1)
+
+        call this%RKR(this%m_stfMat)
+
+        call this%RKR(this%m_geoMat)
+
         this%m_tanMat = this%m_stfMat + gamma * this%m_geoMat
         this%m_coefMat = this%m_tanMat + coeffs(0) * this%m_masMat + coeffs(1) * dampM * this%m_masMat
         if(dampK .gt. 0.0d0) then
             this%m_coefMat = this%m_coefMat + coeffs(1) * dampK * this%m_stfMat
         endif
-        call this%RotateMatrix(this%xll1,this%xmm1,this%xnn1)
-        temp = this%m_coefMat
-        call this%RKR(temp)
-        this%m_coefMat = temp
         return
     end subroutine Segment_UpdateMatrix
 
@@ -493,6 +489,7 @@ module BeamStrucutre
         em(11,11)   = em(5,5)
         em(12,12)   = em(6,6)
 
+        this%m_masMat = 0.0d0
         this%m_masMat = em
         return
     end subroutine Segment_FormMassMatrix
@@ -562,6 +559,7 @@ module BeamStrucutre
             enddo
         enddo
         
+        this%m_stfMat = 0.0d0
         this%m_stfMat = ek
         return
     end subroutine Segment_FormStiffMatrix
@@ -637,6 +635,7 @@ module BeamStrucutre
             if (dabs(eg(i,i)) .lt. 1.0d-20) eg(i,i)=1.0d-20
         enddo
 
+        this%m_geoMat = 0.0d0
         this%m_geoMat = eg
         return
     end subroutine Segment_FormGeomMatrix
@@ -846,7 +845,7 @@ module BeamStrucutre
         this%geoFRM=fxx
         ! nodal forces in local coords
         ! {F}=[k]{u}
-        forceb(1:12) = matmul(this%m_stfMat,ub)
+        forceb(1:12) = matmul(this%stf,ub)
         ! transform to global
         do  i=1,3
         do  j=1,3
@@ -867,16 +866,6 @@ module BeamStrucutre
         call this%LocToGlobal(force, lodInte)
         return
     end subroutine Segment_BodyStress_D
-
-    subroutine Beam_UpdateInternalLoad
-        implicit none
-        integer :: i
-        lodInte = 0.0
-        do i = 1, m_nelmts
-            call m_elements(i)%BodyStress
-        enddo
-        return
-    end subroutine Beam_UpdateInternalLoad
 
     subroutine Segment_get_angle_triad(triad_11,triad_22,tx,ty,tz)
         implicit none
@@ -927,27 +916,26 @@ module BeamStrucutre
         return
     end subroutine Segment_global_to_local
 
-    subroutine Segment_UpdateTriad_D(this)
+    subroutine Segment_UpdateTriad_D(this,dspnn)
         implicit none
         class(Segment), intent(inout) :: this
+        real(8):: dspnn(1:6,1:m_npts)
         real(8):: rr(3,3)
         real(8):: dtx1,dty1,dtz1
-        integer:: i
-        real(8) :: xElmtDofs(nElmtDofs),x(1:g_ndofs)
+        integer:: node0,node1
 
-        do  i=1,nElmtDofs
-            xElmtDofs(i)=x(this%m_localToGlobal(i))
-        enddo
+        node0 = (this%m_localToGlobal(1)+5)/6
+        node1 = (this%m_localToGlobal(7)+5)/6
         ! n1 node
-        dtx1=xElmtDofs(4)
-        dty1=xElmtDofs(5)
-        dtz1=xElmtDofs(6)
+        dtx1=dspnn(4,node0)
+        dty1=dspnn(5,node0)
+        dtz1=dspnn(6,node0)
         call Segment_FiniteRot(dtx1,dty1,dtz1,rr)
         this%triad_n1=matmul(rr,this%triad_n1)
         ! n2 node
-        dtx1=xElmtDofs(10)
-        dty1=xElmtDofs(11)
-        dtz1=xElmtDofs(12)
+        dtx1=dspnn(4,node1)
+        dty1=dspnn(5,node1)
+        dtz1=dspnn(6,node1)
         call Segment_FiniteRot(dtx1,dty1,dtz1,rr)
         this%triad_n2=matmul(rr,this%triad_n2)
 
@@ -1064,49 +1052,21 @@ module BeamStrucutre
         return
     end subroutine Segment_FiniteRot
 
-    subroutine Beam_FormMss
+    subroutine Beam_InitTriadANDFormMass
         implicit none
-        real(8):: tempmss(nElmtDofs,nElmtDofs)
         integer:: i
     
-        ! zero array before assembling
-        mss(1:g_ndofs)=0.0d0
         do i = 1, m_nelmts
-            call m_elements(i)%FormMassMatrix
-            tempmss = m_elements(i)%m_masMat
-            call m_elements(i)%RotateMatrix(m_elements(i)%xll0,m_elements(i)%xmm0,m_elements(i)%xnn0)
-            call m_elements(i)%RKR(tempmss)
-            call m_elements(i)%LocToGlobal(tempmss,mss)
-        enddo
-
-        return
-    end subroutine Beam_FormMss
-
-    subroutine Beam_InitTriad
-        implicit none
-        integer :: i
-        do i = 1, m_nelmts
+            ! InitTriad
             call m_elements(i)%InitTriad_D
+            ! FormMass
+            call m_elements(i)%FormMassMatrix
+            call m_elements(i)%RotateMatrix(m_elements(i)%xll0,m_elements(i)%xmm0,m_elements(i)%xnn0)
+            call m_elements(i)%RKR(m_elements(i)%m_masMat)
         enddo
-        return
-    end subroutine Beam_InitTriad
-    subroutine Beam_UpdateTriad
-        implicit none
-        integer :: i
-        do i = 1, m_nelmts
-            call m_elements(i)%UpdateTriad_D
-        enddo
-        return
-    end subroutine Beam_UpdateTriad
-    subroutine Beam_MakeTriadElement
-        implicit none
-        integer :: i
-        do i = 1, m_nelmts
-            call m_elements(i)%MakeTriad_ee
-        enddo
-        return
-    end subroutine Beam_MakeTriadElement
 
+        return
+    end subroutine Beam_InitTriadANDFormMass
 end module BeamStrucutre
 
 program main
@@ -1136,8 +1096,12 @@ program main
     ! write(*, *)y, trans
     
     ! test example: ISBN 9787040258417 Zeng Pan. P45
+    ! character (LEN=20)::filename
+    ! filename = 'Beam.dat'
+    ! call Beam_initialise(filename, 5d-1, 1d0, 5d0, 0d0, 0d0, 1d0, 0d0)
+    ! call Beam_Solve(1, 200, 1d-3)
     character (LEN=20)::filename
-    filename = 'Beam.dat'
-    call Beam_initialise(filename, 5d-1, 1d0, 5d0, 0d0, 0d0, 1d0, 0d0)
-    call Beam_Solve(1, 200, 1d-3)
+    filename = 'Dynamic.dat'
+    call Beam_initialise(filename, 0.5d0, 0.25d0, 0.12d0, 0d0, 0d0, 1d0, 0d0)
+    call Beam_Solve(10, 200, 1d-3)
 end program

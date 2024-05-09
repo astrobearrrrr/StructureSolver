@@ -211,6 +211,7 @@ subroutine StructureSolver(jBC,vBC,ele,prop,mss,xyzful0,xyzful,dspful,velful,acc
 !       [C]=dampM*[M]+dampK*[K]
 !       ISBN 9781441929105 James F. Doyle. P268
 !       -------------------------------------------------------------------
+        lodExte = (/0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -25000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0/)
         do    i= 1, nEQ
             lodEffe(i)=lodExte(i)-lodInte(i)+(a0*(dspO(i)-dsp(i))+a2*vel(i)+a3*acc(i))*mss(i)   &
                                             +(a1*(dspO(i)-dsp(i))+a4*vel(i)+a5*acc(i))*dampM*mss(i)
@@ -239,7 +240,6 @@ subroutine StructureSolver(jBC,vBC,ele,prop,mss,xyzful0,xyzful,dspful,velful,acc
                         xyzful(1:nND,1),xyzful(1:nND,2),xyzful(1:nND,3), &
                         prop(1:nMT,:),nND,nEL,nEQ,nMT,geoFRM,alphaf,gamma,a0,a1,dampM,dampK,2,lodEffe,vBC,iter)
 
-        lodEffe = (/0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -25000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0/)
 !       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !       Conjugate Gradient Method
 !       Iterative solution for displacement vector.
@@ -451,7 +451,7 @@ subroutine matrixfree(jBC,x,b,ele,xord0,yord0,zord0,xord,yord,zord,prop,nND,nEL,
     integer:: isjBC,iter
 
     integer:: i,j,n,i1,j1,k1,mat,nELt
-    real(8):: e0,g0,a0,r0,b0,zix0,ziy0,ziz0,dx,dy,dz,xl0,xl,xll,xmm,xnn,xl9
+    real(8):: e0,g0,a0,r0,b0,zix0,ziy0,ziz0,dx,dy,dz,xl0,xl,xll,xmm,xnn,xl9,xll0,xmm0,xnn0
 
     real(8):: b(nEQ),x(nEQ),x18(18),b18(18)
     integer:: idof(18),jBC(nND,6),iND,iEQ,iEQ2
@@ -484,6 +484,9 @@ subroutine matrixfree(jBC,x,b,ele,xord0,yord0,zord0,xord,yord,zord,prop,nND,nEL,
             dy= yord0(j1) - yord0(i1)
             dz= zord0(j1) - zord0(i1)
             xl0=dsqrt(dx*dx+dy*dy+dz*dz)
+            xll0=dx/xl0
+            xmm0=dy/xl0
+            xnn0=dz/xl0
             !
             ! orientation
             dx= xord(j1) - xord(i1)
@@ -515,7 +518,7 @@ subroutine matrixfree(jBC,x,b,ele,xord0,yord0,zord0,xord,yord,zord,prop,nND,nEL,
             ! Calculate the mass matrix
             xl9= xl0
             call elmmasFRM_D(r0,a0,xl9,zix0,em12,alphaf)
-            call trans3d_D(xll,xmm,xnn,em12,b0)
+            call trans3d_D(xll0,xmm0,xnn0,em12,b0)
             em(1:18,1:18)=0.0d0
             em(1:12,1:12)=em12(1:12,1:12)
 
@@ -558,9 +561,6 @@ subroutine matrixfree(jBC,x,b,ele,xord0,yord0,zord0,xord,yord,zord,prop,nND,nEL,
                     b(idof(i))=b(idof(i))+b18(i)
                 enddo
             else  if  (isjBC .eq. 0) then
-!               -------------------------------------------------------------------
-!               Multiply the element stiffness matrix by the displacement vector, and assemble the force vector
-!               !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  
                 do i = 1, 12
                     x18(i)=x(idof(i))
                 enddo
