@@ -1,4 +1,5 @@
 ! test example: ISBN 9787040258417 Zeng Pan. P45
+! program algorithm: ISBN 9781441929105 James F. Doyle. P354
 program main
     implicit none
 
