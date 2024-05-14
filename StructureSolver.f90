@@ -28,6 +28,7 @@ program main
     
 !   ===============================================================================================
     open(unit=idat, file = 'Beam.dat')
+    ! open(unit=idat, file = 'Dynamic.dat')
         rewind(idat)
         read(idat,*)
         read(idat,*)nND,nEL,nMT
@@ -69,6 +70,7 @@ program main
     close(idFlow)
 !   ===============================================================================================
     open(unit=idat, file = 'Beam.dat')
+    ! open(unit=idat, file = 'Dynamic.dat')
     rewind(idat)
     read(idat,*)
     read(idat,*)nND,nEL,nMT
@@ -107,6 +109,37 @@ program main
 !   ===============================================================================================
 !   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !   Begin loop over time increments:
+!   -------------------------------------------------------------------
+!    static question
+    Newmarkdelta=0.5d0
+    Newmarkalpha=1.0d0
+    dt=0.1d0
+    dampM=0.0d0
+    dampK=0.0d0
+    alphaf=0.0d0
+    extful(1,1:6)=(/0.0d0,0.0d0,0.0d0,0.0d0,0.0d0,0.0d0/)
+    extful(2,1:6)=(/20000.0d0,0.0d0,0.0d0,0.0d0,0.0d0,0.0d0/)
+    extful(3,1:6)=(/0.0d0,-25000.0d0,0.0d0,0.0d0,0.0d0,0.0d0/)
+    extful(4,1:6)=(/0.0d0,0.0d0,0.0d0,0.0d0,0.0d0,0.0d0/)
+    timeSimTotl=0
+    Tref=1.0d0
+    dtol=1d-3
+    iterMax=200
+!    dynamic question
+    ! Newmarkdelta=0.5d0
+    ! Newmarkalpha=0.25d0
+    ! dt=0.12d0
+    ! dampM=0.0d0
+    ! dampK=0.0d0
+    ! alphaf=0.0d0
+    ! extful(1,1:6)=(/0.0d0,0.0d0,0.0d0,0.0d0,0.0d0,0.0d0/)
+    ! extful(2,1:6)=(/0.0d0,0.0d0,0.0d0,0.0d0,0.0d0,0.0d0/)
+    ! extful(3,1:6)=(/0.0d0,1.0d0,0.0d0,0.0d0,0.0d0,0.0d0/)
+    ! timeSimTotl=0.6
+    ! Tref=1.0d0
+    ! dtol=1d-3
+    ! iterMax=200
+
 !   -------------------------------------------------------------------
     deltat = dt
     time=0.0d0
@@ -212,7 +245,6 @@ subroutine StructureSolver(jBC,vBC,ele,prop,mss,xyzful0,xyzful,dspful,velful,acc
 !       [C]=dampM*[M]+dampK*[K]
 !       ISBN 9781441929105 James F. Doyle. P268
 !       -------------------------------------------------------------------
-        lodExte = (/0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -25000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0/)
         do    i= 1, nEQ
             lodEffe(i)=lodExte(i)-lodInte(i)+(a0*(dspO(i)-dsp(i))+a2*vel(i)+a3*acc(i))*mss(i)   &
                                             +(a1*(dspO(i)-dsp(i))+a4*vel(i)+a5*acc(i))*dampM*mss(i)
@@ -951,6 +983,8 @@ endsubroutine
 !   triad_n1,triad_n2,triad_ee
 !   output: gforce global force
 !   geoFRM
+!   Element nodal force
+!   ISBN 9781441929105 James F. Doyle. P353
 !    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 subroutine body_stress_D(gforce,xord0,yord0,zord0,xord,yord,zord,ele,prop,triad_n1,triad_n2,triad_ee, &
                             nND,nEL,nEQ,nMT,geoFRM &
@@ -1219,8 +1253,8 @@ endsubroutine
 
 !    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !   ELeMent GEOMetric stiffness matrix for a FRaMe
-!   ISBN 9781441929105 James F. Doyle. P217,228,229
-!   ISBN 9780792312086 James F. Doyle. P424
+!   ISBN 9781441929105 James F. Doyle. P217,228,229,405
+!   ISBN 9780792312086 James F. Doyle. P129,424
 !    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     ! s tension force
     ! element initial length
