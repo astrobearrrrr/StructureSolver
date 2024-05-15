@@ -13,14 +13,14 @@ gfortran -ffree-line-length-none -o BeamStructure BeamStrucutre.f90
 ```
 ***********************************************************************
 ## Book
-ISBN 9787040258417 有限元基础教程 曾攀
-ISBN 9781441929105 Nonlinear Analysis of Thin-Walled Structures: Statics, Dynamics, and Stability James F. Doyle
-ISBN 9787302388333 计算动力学 张雄
-ISBN 9780792312086 Static and Dynamic Analysis of Structures with An Emphasis on Mechanics and Computer Matrix Methods James F. Doyle
+- ISBN 9787040258417 有限元基础教程 曾攀
+- ISBN 9781441929105 Nonlinear Analysis of Thin-Walled Structures: Statics, Dynamics, and Stability James F. Doyle
+- ISBN 9787302388333 计算动力学 张雄
+- ISBN 9780792312086 Static and Dynamic Analysis of Structures with An Emphasis on Mechanics and Computer Matrix Methods James F. Doyle
 ***********************************************************************
 ## test case
-static: ISBN 9787040258417 有限元基础教程 Zeng Pan 曾攀. P45
-dynamic: ISBN 9787576318555 计算固体力学 Dong Chunying 董春迎. P146 8.2
+- static: ISBN 9787040258417 有限元基础教程 Zeng Pan 曾攀. P45
+- dynamic: ISBN 9787576318555 计算固体力学 Dong Chunying 董春迎. P146 8.2
 ***********************************************************************
 ### static: ISBN 9787040258417 有限元基础教程 Zeng Pan 曾攀. P45
 - Question
@@ -38,13 +38,17 @@ dynamic: ISBN 9787576318555 计算固体力学 Dong Chunying 董春迎. P146 8.2
  n1        n2
  ```
 node 1 and 3 is hinge joint, node 2 is sliding hinge which displace can happen in the x direction, node 3 is free.
+
 $A = 100mm^{2}, E = 2.95*10^{5}N/mm^{2}$
 
 - Results:
-displacement
-node 2 :$d_{x}= 0.2712mm$
-node 3 :$d_{x}= 0.0565mm$
-node 3 :$d_{y}=-0.2225mm$
+- displacement
+
+  node 2: $d _{x}= 0.2712mm$
+
+  node 3: $d _{x}= 0.0565mm$
+
+  node 3: $d _{y}=-0.2225mm$
 
 - Main program can be written as
 ```
@@ -69,11 +73,20 @@ end program
 n1         n2         n3
 ```
 $A_{1} = 2A, A_{2} = A, A = 2cm^{2}, E = 50 Pa, \rho = 5*10^{6}kg/m^{3}$
+
 Initional: node 1-3 
-displacement $\textbf{d}_{0} = 0$
-Velocity $\textbf{v}_{0} = 0$
-Acceleration $\textbf{a}_{0} = \textbf{M}^{-1}(\textbf{F}_{0}-\textbf{Cv}_{0}-\textbf{Kd}_{0})$
-Force: $F=1$ at $t=0 \sim 0.5$, $F=0$ at $t \textgreater 0.5$ 
+
+Displacement: 
+$\textbf{d} _{0} = 0$
+
+Velocity: 
+$\textbf{v} _{0} = 0$
+
+Acceleration: 
+$\textbf{a} _{0} = \textbf{M}^{-1}(\textbf{F} _{0}-\textbf{Cv} _{0}-\textbf{Kd} _{0})$
+
+Force: 
+$F=1$ at $t=0 \sim 0.5$, $F=0$ at $t \textgreater 0.5$ 
 
 Two degrees of freedom: node 2 $x$-direction, node 3 $x$-direction
 $$M = 1/4*[3 ,  0 ;  0 , 1]$$
