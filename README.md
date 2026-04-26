@@ -9,7 +9,7 @@ gfortran -ffree-line-length-none -o StructureSolver StructureSolver.f90
 .\StructureSolver.exe
 ```
 ```
-gfortran -ffree-line-length-none -o BeamStructure BeamStrucutre.f90
+gfortran -ffree-line-length-none -o BeamStructure BeamStructure.f90
 .\BeamStructure.exe
 ```
 ### Linux
@@ -18,7 +18,7 @@ gfortran -ffree-line-length-none -o StructureSolver StructureSolver.f90
 ./StructureSolver
 ```
 ```
-gfortran -ffree-line-length-none -o BeamStructure BeamStrucutre.f90
+gfortran -ffree-line-length-none -o BeamStructure BeamStructure.f90
 ./BeamStructure
 ```
 ***********************************************************************
@@ -63,7 +63,7 @@ $A = 100mm^{2}, E = 2.95*10^{5}N/mm^{2}$
 - Main program can be written as
 ```
 program main
-    use BeamStrucutre
+    use BeamStructure
     implicit none
     character (LEN=20)::filename
     filename = 'Beam.dat'
@@ -284,17 +284,17 @@ end subroutine
 ```
 7. How to run(Linux)
 ```
-gfortran -ffree-line-length-none -o BeamStructure BeamStrucutre.f90
+gfortran -ffree-line-length-none -o BeamStructure BeamStructure.f90
 cd examples/dynamic/
 ./../../BeamStructure
 ```
 or use the changed code
 ```
 cd examples/dynamic/
-gfortran -ffree-line-length-none -o BeamStructure new_BeamStrucutre.f90
+gfortran -ffree-line-length-none -o BeamStructure new_BeamStructure.f90
 ./BeamStructure
 ```
-old_BeamStrucutre.f90 is the unchanged code
+old_BeamStructure.f90 is the unchanged code
 
 #### Before calculating the dynamic case, some changes needed to modify the StructureSolver.f90 file. 
 1. initialize acceleration with $M^{-1}F_{0}$

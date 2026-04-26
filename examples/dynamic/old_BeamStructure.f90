@@ -2,7 +2,7 @@
 ! static : ISBN 9787040258417 Zeng Pan. P45
 ! dynamic: ISBN 9787576318555 Dong Chunying. P146 8.2
 ! program algorithm: ISBN 9781441929105 James F. Doyle. P354
-module BeamStrucutre
+module BeamStructure
     !use mkl
     implicit none
     private
@@ -1148,10 +1148,10 @@ module BeamStrucutre
         return
     end subroutine Segment_FiniteRot
 
-end module BeamStrucutre
+end module BeamStructure
 
 program main
-    use BeamStrucutre
+    use BeamStructure
     implicit none
     ! character*1 ::     trans
     ! real(8) :: alpha = 1., beta = 0.0
