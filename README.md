@@ -89,7 +89,7 @@ Force:
 $F=1$ at $t=0 \sim 0.5$, $F=0$ at $t \textgreater 0.5$ 
 
 Two degrees of freedom: node 2 $x$-direction, node 3 $x$-direction
-$$M = 1/4*[3 ,  0 ;  0 , 1]$$
+$$M = 1/4*[30,  0 ;  0 ,10]$$
 $$K =   2*[3 , -1 ; -1 , 1]$$
 $$C =     [0 ,  0 ;  0 , 0]$$
 
