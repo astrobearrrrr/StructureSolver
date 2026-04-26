@@ -271,6 +271,9 @@ module BeamStrucutre
                 call Beam_UpdateMatrixANDLoad(j,dspO,dsp,vel,acc)
                 call CG_Solve(dspn, lodEffe)
                 call Beam_UpdateDspANDTride(j, dspn, dsp, dnorm)
+                open(unit = 111, file = 'disp_ele_2_BeamStructure.dat', position = 'append')
+                write(111,'(12E28.5)') m_elements(2)%x1(:)-m_elements(2)%x0(:)
+                close(111)
                 if(dnorm .le. dtol) exit
             enddo
             call Beam_UpdateVelAcc(dspO, velO, accO, dsp, vel, acc)
@@ -1174,14 +1177,18 @@ program main
     ! write(*, *)y, trans
 
     ! static : ISBN 9787040258417 Zeng Pan. P45
-    character (LEN=20)::filename
-    filename = 'Beam.dat'
-    call Beam_initialise(filename, 5d-1, 1d0, 5d0, 0d0, 0d0, 1d0, 0d0)
-    call Beam_Solve(1, 200, 1d-3)
 
     ! dynamic: ISBN 9787576318555 Dong Chunying. P146 8.2
-    ! character (LEN=20)::filename
-    ! filename = 'Dynamic.dat'
-    ! call Beam_initialise(filename, 0.5d0, 0.25d0, 0.12d0, 0d0, 0d0, 1d0, 0d0)
-    ! call Beam_Solve(10, 1, 1d-3)
+    character (LEN=20)::filename
+    integer:: fileiD=111
+    real(8):: Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1, alphaf1, dtol
+    integer:: maxDynamic, maxNewtonRaphson
+    open(unit=fileiD, file = 'inFlow.dat' )
+        read(fileiD,*)
+        read(fileiD,*) filename, Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1, alphaf1
+        read(fileiD,*)
+        read(fileiD,*) maxDynamic, maxNewtonRaphson, dtol
+    close(fileiD)
+    call Beam_initialise(filename, Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1, alphaf1)
+    call Beam_Solve(maxDynamic, maxNewtonRaphson, dtol)
 end program

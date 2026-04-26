@@ -16,19 +16,29 @@ program main
     real(8):: Newmarkdelta,Newmarkalpha
     real(8):: dtol
     integer:: iterMax
-    integer:: i,iND
+    integer:: iND
 !   ===============================================================================================
     real(8), allocatable:: xyzful00(:,:),mssful(:,:)
     real(8), allocatable:: lodful(:,:),extful(:,:),grav(:,:)
     real(8), allocatable:: xyzfulnxt(:,:)
-    real(8):: alphaf,alpham,alphap,g(3)
-    integer:: step,numsubstep,isubstep
+    real(8):: alphaf,g(3)
+    integer:: step,numsubstep=1,isubstep
     real(8):: dt,time,timeSimTotl,subdeltat,Tref=1
-    integer:: idFlow = 11, idat = 12
+    integer:: idat = 12
     
 !   ===============================================================================================
-    open(unit=idat, file = 'Beam.dat')
-    ! open(unit=idat, file = 'Dynamic.dat')
+    character (LEN=20)::filename
+    integer:: fileiD=111,maxDynamic
+    real(8):: gamma
+    open(unit=fileiD, file = 'inFlow.dat' )
+        read(fileiD,*)
+        read(fileiD,*) filename, Newmarkdelta, Newmarkalpha, dt, dampM, dampK, gamma, alphaf
+        read(fileiD,*)
+        read(fileiD,*) maxDynamic, iterMax, dtol
+    close(fileiD)
+    timeSimTotl=dble(maxDynamic-1)*dt
+
+    open(unit=idat, file = filename)
         rewind(idat)
         read(idat,*)
         read(idat,*)nND,nEL,nMT
@@ -46,36 +56,12 @@ program main
     allocate(lodful(nND,6),extful(nND,6),grav(nND,6) )
     allocate(xyzfulnxt(nND,6) )
 !   ===============================================================================================
-    open(unit=idFlow, file = 'inFlow.dat')
-    do i = 1,5
-        read(idFlow,*)
-    enddo
-    read(idFlow,*)     timeSimTotl
-    close(idFlow)
-    open(unit=idFlow, file = 'inFlow.dat')
-    do i = 1,15
-        read(idFlow,*)
-    enddo
-    read(idFlow,*)     dt
-    close(idFlow)
-    open(unit=idFlow, file = 'inFlow.dat')
-    do i = 1,39
-        read(idFlow,*)
-    enddo
-    read(idFlow,*)     numsubstep
-    read(idFlow,*)     dampK,dampM
-    read(idFlow,*)     Newmarkdelta,Newmarkalpha
-    read(idFlow,*)     alphaf,alpham,alphap
-    read(idFlow,*)     dtol,iterMax
-    close(idFlow)
-!   ===============================================================================================
-    open(unit=idat, file = 'Beam.dat')
-    ! open(unit=idat, file = 'Dynamic.dat')
+    open(unit=idat, file = filename)
     rewind(idat)
     read(idat,*)
     read(idat,*)nND,nEL,nMT
     read(idat,*)
-    call readdt(jBC(1:nND,1:6),ele(1:nEL,1:5),xyzful00(1:nND,1:6),prop(1:nMT,1:10), &
+    call readdt(jBC(1:nND,1:6),ele(1:nEL,1:5),xyzful00(1:nND,1:6),prop(1:nMT,1:10),extful(1:nND,1:6), &
                 nND,nEL,nEQ,nMT,idat)
     close(idat)
 !   ===============================================================================================
@@ -89,7 +75,6 @@ program main
 !   ===============================================================================================
     g(1:3)=0.0d0
     xyzfulnxt(1:nND,1:6)=xyzful(1:nND,1:6)
-    extful(1:nND,1:6)=0.0d0
 !   ===============================================================================================
 !   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !   Assemble the mass matrices [M].
@@ -109,36 +94,6 @@ program main
 !   ===============================================================================================
 !   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !   Begin loop over time increments:
-!   -------------------------------------------------------------------
-!    static question
-    Newmarkdelta=0.5d0
-    Newmarkalpha=1.0d0
-    dt=0.1d0
-    dampM=0.0d0
-    dampK=0.0d0
-    alphaf=0.0d0
-    extful(1,1:6)=(/0.0d0,0.0d0,0.0d0,0.0d0,0.0d0,0.0d0/)
-    extful(2,1:6)=(/20000.0d0,0.0d0,0.0d0,0.0d0,0.0d0,0.0d0/)
-    extful(3,1:6)=(/0.0d0,-25000.0d0,0.0d0,0.0d0,0.0d0,0.0d0/)
-    extful(4,1:6)=(/0.0d0,0.0d0,0.0d0,0.0d0,0.0d0,0.0d0/)
-    timeSimTotl=0
-    Tref=1.0d0
-    dtol=1d-3
-    iterMax=200
-!    dynamic question
-    ! Newmarkdelta=0.5d0
-    ! Newmarkalpha=0.25d0
-    ! dt=0.12d0
-    ! dampM=0.0d0
-    ! dampK=0.0d0
-    ! alphaf=0.0d0
-    ! extful(1,1:6)=(/0.0d0,0.0d0,0.0d0,0.0d0,0.0d0,0.0d0/)
-    ! extful(2,1:6)=(/0.0d0,0.0d0,0.0d0,0.0d0,0.0d0,0.0d0/)
-    ! extful(3,1:6)=(/0.0d0,1.0d0,0.0d0,0.0d0,0.0d0,0.0d0/)
-    ! timeSimTotl=0.6
-    ! Tref=1.0d0
-    ! dtol=1d-3
-    ! iterMax=200
 
 !   -------------------------------------------------------------------
     deltat = dt
@@ -318,13 +273,9 @@ subroutine StructureSolver(jBC,vBC,ele,prop,mss,xyzful0,xyzful,dspful,velful,acc
         iter=iter+1
     enddo
 
-    open(unit=22,file='5.dat',position='append')
-    write(22,'(24E28.5)')dspful
-    close(22)
-
-    open(unit=1111,file='6.dat',position='append')
-    write(1111,'(24E28.5)') xyzful
-    close(1111)
+    open(unit = 111, file = 'disp_ele_2_StructureSolver.dat', position = 'append')
+    write(111,'(12E28.5)') dspful(2,1:6),dspful(3,1:6)
+    close(111)
 
     acc(1:nEQ)  = a0*(dsp(1:nEQ) - dspO(1:nEQ)) -a2*velO(1:nEQ) - a3*accO(1:nEQ)
     vel(1:nEQ)  = velO(1:nEQ) + a6*accO(1:nEQ) + a7*acc(1:nEQ)
@@ -342,11 +293,11 @@ endsubroutine
 !    
 !   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !   READ structural DaTafile
-subroutine readdt(jBC,ele,xyzful0,prop,nND,nEL,nEQ,nMT,idat)
+subroutine readdt(jBC,ele,xyzful0,prop,extful,nND,nEL,nEQ,nMT,idat)
     implicit none
     integer:: nND,nEL,nEQ,nMT,idat
     integer:: ele(nEL,5),jBC(nND,6)
-    real(8):: xyzful0(nND,6),prop(nMT,10)
+    real(8):: xyzful0(nND,6),prop(nMT,10),extful(nND,6)
 !   ---------------------------------------------------------------------------
     integer:: i,j,nbc,node,nmp
     character*50 endin
@@ -383,6 +334,15 @@ subroutine readdt(jBC,ele,xyzful0,prop,nND,nEL,nEQ,nMT,idat)
     read(idat,*) nMT
     do    i= 1, nMT
         read(idat,*) nmp,prop(nmp,1:8)
+    enddo
+    read(idat,'(1a50)') endin
+!   -----------------------------------------------------------------------------------------------
+!   READ nodal external loads
+    extful(1:nND,1:6) = 0.0d0
+    read(idat,*)
+    do  i=1,nND
+        read(idat,*)node,extful(node,1),extful(node,2),extful(node,3), &
+                         extful(node,4),extful(node,5),extful(node,6)
     enddo
     read(idat,'(1a50)') endin
 !   -----------------------------------------------------------------------------------------------
@@ -453,11 +413,6 @@ subroutine cg(x,b,jBC,ele,xord0,yord0,zord0,xord,yord,zord,prop,nND,nEL,nEQ,nMT,
     enddo
 
     write(*,*) 'iter is', iter
-
-    open(unit = 111, file = 'x.dat', position = 'append')
-    write(111,'(24E28.5)') x
-    close(111)
-    
     
     call CPU_TIME(finish)  ! Get the end time.
     total_time = finish - start  ! Calculate the difference, namely the program running time.
