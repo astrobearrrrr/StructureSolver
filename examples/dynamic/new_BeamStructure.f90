@@ -2,7 +2,7 @@
 ! static : ISBN 9787040258417 Zeng Pan. P45
 ! dynamic: ISBN 9787576318555 Dong Chunying. P146 8.2
 ! program algorithm: ISBN 9781441929105 James F. Doyle. P354
-module BeamStrucutre
+module BeamStructure
     !use mkl
     implicit none
     private
@@ -266,6 +266,9 @@ module BeamStrucutre
         call Beam_InitDspVelAcc(dsp, vel, acc)
         do i = 1, maxDynamic
             call Beam_InitDspVelAccATTimeT(dspO, velO, accO, dsp, vel, acc)
+            if(i>4)then
+                lodExte=0.0d0
+            endif
             dnorm=1.0d0
             do j = 1, maxNewtonRaphson
                 call Beam_UpdateMatrixANDLoad(j,dspO,dsp,vel,acc)
@@ -284,9 +287,28 @@ module BeamStrucutre
     subroutine Beam_InitDspVelAcc(dsp, vel, acc)
         implicit none
         real(8), intent(inout) :: dsp(1:6, 1:m_npts), vel(1:6, 1:m_npts), acc(1:6, 1:m_npts)
+        real(8) :: M(1:g_ndofs),temp
+        integer :: i,j,node,dof
         dsp(1:6, 1:m_npts) = 0.0d0
         vel(1:6, 1:m_npts) = 0.0d0
         acc(1:6, 1:m_npts) = 0.0d0
+        M=0.0d0
+        do i=1,m_nelmts
+            do j = 1,nElmtDofs
+                M(m_elements(i)%m_localToGlobal(j))=m_elements(i)%m_masMat(j,j)+M(m_elements(i)%m_localToGlobal(j))
+            enddo
+        enddo
+        do i=1,g_ndofs
+            if(M(i).gt.1d-5)then
+                M(i)=1/M(i)
+            endif
+        enddo
+        do i = 1,g_ndofs
+            node = (i+5)/6
+            dof = i-(node-1)*6
+            temp = M(i)*lodExte(i)
+            acc(dof,node)=temp
+        enddo
     end subroutine Beam_InitDspVelAcc
     subroutine Beam_InitDspVelAccATTimeT(dspO, velO, accO, dsp, vel, acc)
         implicit none
@@ -319,7 +341,7 @@ module BeamStrucutre
         do i = 1, m_npts
             dspnn(1:6,i)= beta*dspn((i-1)*6+1:(i-1)*6+6)
         enddo
-        dsp(1:6, 1:m_npts) = dsp(1:6, 1:m_npts) + dspnn(1:6, 1:m_npts)
+        dsp(1:6, 1:m_npts) =  dspnn(1:6, 1:m_npts)
         do i = 1, m_nelmts
             node0 = (m_elements(i)%m_localToGlobal(1)+5)/6
             node1 = (m_elements(i)%m_localToGlobal(7)+5)/6
@@ -363,7 +385,7 @@ module BeamStrucutre
             call m_elements(i)%BodyStress
             call m_elements(i)%UpdateMatrix
         enddo
-        lodEffe = lodExte - lodInte
+        lodEffe = lodExte
         do i = 1, m_nelmts
             call m_elements(i)%UpdateLoad(lodEffe,dspO,dsp,vel,acc)
             call m_elements(i)%BoundaryCond(iter)
@@ -386,7 +408,7 @@ module BeamStrucutre
 
         call this%RKR(this%m_geoMat)
         ! The RKR of this%m_stfMat and this%m_geoMat cannot be merged, calculate dampK use this%m_stfMat after RKR !
-        this%m_tanMat = this%m_stfMat + gamma * this%m_geoMat
+        this%m_tanMat = this%m_stfMat
         this%m_coefMat = this%m_tanMat + coeffs(0) * this%m_masMat + coeffs(1) * dampM * this%m_masMat
         if(dampK .gt. 0.0d0) then
             this%m_coefMat = this%m_coefMat + coeffs(1) * dampK * this%m_stfMat
@@ -409,16 +431,16 @@ module BeamStrucutre
         node0 = (this%m_localToGlobal(1)+5)/6
         node1 = (this%m_localToGlobal(7)+5)/6
         do i = 1,6
-            mss(i)   = (coeffs(0)*(dspO(i,node0)-dsp(i,node0))+coeffs(2)*vel(i,node0)+coeffs(3)*acc(i,node0))*this%m_masMat(i,i)   &
-                      +(coeffs(1)*(dspO(i,node0)-dsp(i,node0))+coeffs(4)*vel(i,node0)+coeffs(5)*acc(i,node0))*dampM*this%m_masMat(i,i)
-            mss(i+6) = (coeffs(0)*(dspO(i,node1)-dsp(i,node1))+coeffs(2)*vel(i,node1)+coeffs(3)*acc(i,node1))*this%m_masMat(i+6,i+6)   &
-                      +(coeffs(1)*(dspO(i,node1)-dsp(i,node1))+coeffs(4)*vel(i,node1)+coeffs(5)*acc(i,node1))*dampM*this%m_masMat(i+6,i+6)
+            mss(i)   = (coeffs(0)*(dsp(i,node0))+coeffs(2)*vel(i,node0)+coeffs(3)*acc(i,node0))*this%m_masMat(i,i)   &
+                      +(coeffs(1)*(dsp(i,node0))+coeffs(4)*vel(i,node0)+coeffs(5)*acc(i,node0))*dampM*this%m_masMat(i,i)
+            mss(i+6) = (coeffs(0)*(dsp(i,node1))+coeffs(2)*vel(i,node1)+coeffs(3)*acc(i,node1))*this%m_masMat(i+6,i+6)   &
+                      +(coeffs(1)*(dsp(i,node1))+coeffs(4)*vel(i,node1)+coeffs(5)*acc(i,node1))*dampM*this%m_masMat(i+6,i+6)
         enddo
         call this%LocToGlobal(mss, b)
         if (dampK .gt. 0.0d0) then
             do i = 1,6
-                wk1(i)  = coeffs(1)*(dspO(i,node0)-dsp(i,node0)) + coeffs(4)*vel(i,node0) +coeffs(5)*acc(i,node0)
-                wk1(i+6)= coeffs(1)*(dspO(i,node1)-dsp(i,node1)) + coeffs(4)*vel(i,node1) +coeffs(5)*acc(i,node1)
+                wk1(i)  = coeffs(1)*(dsp(i,node0)) + coeffs(4)*vel(i,node0) +coeffs(5)*acc(i,node0)
+                wk1(i+6)= coeffs(1)*(dsp(i,node1)) + coeffs(4)*vel(i,node1) +coeffs(5)*acc(i,node1)
             enddo
             wk2 = dampK*matmul(this%m_stfMat, wk1)
             call this%LocToGlobal(wk2, b)
@@ -1148,10 +1170,10 @@ module BeamStrucutre
         return
     end subroutine Segment_FiniteRot
 
-end module BeamStrucutre
+end module BeamStructure
 
 program main
-    use BeamStrucutre
+    use BeamStructure
     implicit none
     ! character*1 ::     trans
     ! real(8) :: alpha = 1., beta = 0.0
