@@ -3,6 +3,7 @@ Structure Solver for structure
 running programme
 ***********************************************************************
 ## How to run
+### Windows
 ```
 gfortran -ffree-line-length-none -o StructureSolver StructureSolver.f90
 .\StructureSolver.exe
@@ -10,6 +11,15 @@ gfortran -ffree-line-length-none -o StructureSolver StructureSolver.f90
 ```
 gfortran -ffree-line-length-none -o BeamStructure BeamStrucutre.f90
 .\BeamStructure.exe
+```
+### Linux
+```
+gfortran -ffree-line-length-none -o StructureSolver StructureSolver.f90
+./StructureSolver
+```
+```
+gfortran -ffree-line-length-none -o BeamStructure BeamStrucutre.f90
+./BeamStructure
 ```
 ***********************************************************************
 ## Book
@@ -272,14 +282,123 @@ subroutine Segment_UpdateLoad(this,b,dspO,dsp,vel,acc)
     return
 end subroutine
 ```
-7. main program can be written as
+7. How to run(Linux)
 ```
-program main
-    use BeamStrucutre
-    implicit none
-    character (LEN=20)::filename
-    filename = 'Dynamic.dat'
-    call Beam_initialise(filename, 0.5d0, 0.25d0, 0.12d0, 0d0, 0d0, 1d0, 0d0)
-    call Beam_Solve(10, 1, 1d-3)
-end program
+gfortran -ffree-line-length-none -o BeamStructure BeamStrucutre.f90
+cd examples/dynamic/
+./../../BeamStructure
 ```
+or use the changed code
+```
+cd examples/dynamic/
+gfortran -ffree-line-length-none -o BeamStructure new_BeamStrucutre.f90
+./BeamStructure
+```
+old_BeamStrucutre.f90 is the unchanged code
+
+#### Before calculating the dynamic case, some changes needed to modify the StructureSolver.f90 file. 
+1. initialize acceleration with $M^{-1}F_{0}$
+```
+    do  iND = 1, nND
+        mssful(iND,1:6)=mss((iND-1)*6+1:(iND-1)*6+6)
+        grav(iND,1:6) = mssful(iND,1:6)*[g(1),g(2),g(3),0.0d0,0.0d0,0.0d0]
+    enddo
+```
+change to
+```
+    do  iND = 1, nND
+        mssful(iND,1:6)=mss((iND-1)*6+1:(iND-1)*6+6)
+        grav(iND,1:6) = mssful(iND,1:6)*[g(1),g(2),g(3),0.0d0,0.0d0,0.0d0]
+        where(mssful(iND,1:6) .gt. 1.0d-5)
+            accful(iND,1:6) = extful(iND,1:6)/mssful(iND,1:6)
+        elsewhere
+            accful(iND,1:6) = 0.0d0
+        endwhere
+    enddo
+```
+
+2. unload the external force after the fourth time step
+```
+            lodful(1:nND,1:6) = extful(1:nND,1:6)+grav(1:nND,1:6)
+```
+change to
+```
+            if(step .gt. 4)then
+                lodful(1:nND,1:6) = grav(1:nND,1:6)
+            else
+                lodful(1:nND,1:6) = extful(1:nND,1:6)+grav(1:nND,1:6)
+            endif
+```
+
+3. only iterate `iterMax` times in each time step
+```
+    do while(dnorm >= dtol .and. iter<= iterMax )
+```
+change to
+```
+    do while(dnorm >= dtol .and. iter < iterMax )
+```
+
+4. change the effective load vector in `StructureSolver`
+```
+        do    i= 1, nEQ
+            lodEffe(i)=lodExte(i)-lodInte(i)+(a0*(dspO(i)-dsp(i))+a2*vel(i)+a3*acc(i))*mss(i)   &
+                                            +(a1*(dspO(i)-dsp(i))+a4*vel(i)+a5*acc(i))*dampM*mss(i)
+        enddo
+```
+change to
+```
+        do    i= 1, nEQ
+            lodEffe(i)=lodExte(i)+(a0*dsp(i)+a2*vel(i)+a3*acc(i))*mss(i)   &
+                                 +(a1*dsp(i)+a4*vel(i)+a5*acc(i))*dampM*mss(i)
+        enddo
+```
+
+5. change the `dampK` auxiliary vector in `StructureSolver`
+```
+        if    (dampK .gt. 0.0d0) then
+            do    i= 1, nEQ
+                wk1(i)= a1*(dspO(i)-dsp(i)) +a4*vel(i) +a5*acc(i)
+            enddo
+```
+change to
+```
+        if    (dampK .gt. 0.0d0) then
+            do    i= 1, nEQ
+                wk1(i)= a1*dsp(i) +a4*vel(i) +a5*acc(i)
+            enddo
+```
+
+6. update the displacement directly with the solved vector
+```
+        ddu(1:nEQ)= beta*du(1:nEQ)
+        dsp(1:nEQ)= dsp(1:nEQ) + ddu(1:nEQ)
+```
+change to
+```
+        ddu(1:nEQ)= beta*du(1:nEQ)
+        dsp(1:nEQ)= ddu(1:nEQ)
+```
+
+7. remove the geometric stiffness contribution in `matrixfree`
+```
+            et = ek + gamma * eg
+```
+change to
+```
+            et = ek
+```
+
+8. How to run(Linux)
+```
+gfortran -ffree-line-length-none -o StructureSolver StructureSolver.f90
+cd examples/dynamic/
+./../../StructureSolver
+```
+or use the changed code
+```
+cd examples/dynamic/
+gfortran -ffree-line-length-none -o StructureSolver new_StructureSolver.f90
+./StructureSolver
+```
+old_StructureSolver.f90 is the unchanged code
