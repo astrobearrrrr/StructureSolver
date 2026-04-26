@@ -1,5 +1,5 @@
 gfortran -ffree-line-length-none -o StructureSolver StructureSolver.f90
-gfortran -ffree-line-length-none -o BeamStructure BeamStrucutre.f90
+gfortran -ffree-line-length-none -o BeamStructure BeamStructure.f90
 cd examples
 for frqcase in */; do
   if [ -d "${frqcase}" ]; then
