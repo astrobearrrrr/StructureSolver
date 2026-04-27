@@ -121,6 +121,7 @@ program main
         enddo
     enddo
 
+    call ReportDispFieldStat(dspful, nND, 'fieldstat_StructureSolver.dat')
 
 end program main
 
@@ -273,9 +274,9 @@ subroutine StructureSolver(jBC,vBC,ele,prop,mss,xyzful0,xyzful,dspful,velful,acc
         iter=iter+1
     enddo
 
-    open(unit = 111, file = 'disp_ele_2_StructureSolver.dat', position = 'append')
-    write(111,'(12E28.5)') dspful(2,1:6),dspful(3,1:6)
-    close(111)
+    ! open(unit = 111, file = 'disp_ele_2_StructureSolver.dat', position = 'append')
+    ! write(111,'(12E28.5)') dspful(2,1:6),dspful(3,1:6)
+    ! close(111)
 
     acc(1:nEQ)  = a0*(dsp(1:nEQ) - dspO(1:nEQ)) -a2*velO(1:nEQ) - a3*accO(1:nEQ)
     vel(1:nEQ)  = velO(1:nEQ) + a6*accO(1:nEQ) + a7*acc(1:nEQ)
@@ -286,6 +287,38 @@ subroutine StructureSolver(jBC,vBC,ele,prop,mss,xyzful0,xyzful,dspful,velful,acc
     enddo
 
 endsubroutine
+
+subroutine ReportDispFieldStat(field, nND, fileName)
+    implicit none
+    integer, intent(in) :: nND
+    real(8), intent(in) :: field(nND,6)
+    character(LEN=*), intent(in) :: fileName
+    integer, parameter :: statUnit = 112
+
+    open(unit=statUnit, file=fileName, status='replace')
+    call ReportDispGroup(statUnit, field(1:nND,1:3), nND, 'DISP_TRANS', (/ 'Ux', 'Uy', 'Uz' /))
+    call ReportDispGroup(statUnit, field(1:nND,4:6), nND, 'DISP_ROT',   (/ 'Rx', 'Ry', 'Rz' /))
+    close(statUnit)
+end subroutine
+
+subroutine ReportDispGroup(fileUnit, fieldGroup, nND, groupName, dofName)
+    implicit none
+    integer, intent(in) :: fileUnit, nND
+    real(8), intent(in) :: fieldGroup(nND,3)
+    character(LEN=*), intent(in) :: groupName
+    character(LEN=2), intent(in) :: dofName(3)
+    real(8) :: l2(3), linfty(3)
+    integer :: i
+
+    do i = 1, 3
+        l2(i) = dsqrt(sum(fieldGroup(1:nND,i) * fieldGroup(1:nND,i)) / dble(nND))
+        linfty(i) = maxval(dabs(fieldGroup(1:nND,i)))
+        write(fileUnit,'(A,1X,A,1X,A,1X,ES24.16)') 'FIELDSTAT', trim(groupName), 'L2 ' // trim(dofName(i)), l2(i)
+    enddo
+    do i = 1, 3
+        write(fileUnit,'(A,1X,A,1X,A,1X,ES24.16)') 'FIELDSTAT', trim(groupName), 'Linfinity ' // trim(dofName(i)), linfty(i)
+    enddo
+end subroutine
 
 
 !   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

@@ -271,15 +271,47 @@ module BeamStructure
                 call Beam_UpdateMatrixANDLoad(j,dspO,dsp,vel,acc)
                 call CG_Solve(dspn, lodEffe)
                 call Beam_UpdateDspANDTride(j, dspn, dsp, dnorm)
-                open(unit = 111, file = 'disp_ele_2_BeamStructure.dat', position = 'append')
-                write(111,'(12E28.5)') m_elements(2)%x1(:)-m_elements(2)%x0(:)
-                close(111)
                 if(dnorm .le. dtol) exit
             enddo
+            ! open(unit = 111, file = 'disp_ele_2_BeamStructure.dat', position = 'append')
+            ! write(111,'(12E28.5)') m_elements(2)%x1(:)-m_elements(2)%x0(:)
+            ! close(111)
             call Beam_UpdateVelAcc(dspO, velO, accO, dsp, vel, acc)
         enddo
+        call Beam_ReportDispFieldStat(dsp, 'fieldstat_BeamStructure.dat')
         return
     end subroutine Beam_Solve
+
+    subroutine Beam_ReportDispFieldStat(field, fileName)
+        implicit none
+        real(8), intent(in) :: field(1:6, 1:m_npts)
+        character(LEN=*), intent(in) :: fileName
+        integer, parameter :: statUnit = 112
+
+        open(unit=statUnit, file=fileName, status='replace')
+        call Beam_ReportDispGroup(statUnit, field(1:3,1:m_npts), 'DISP_TRANS', (/ 'Ux', 'Uy', 'Uz' /))
+        call Beam_ReportDispGroup(statUnit, field(4:6,1:m_npts), 'DISP_ROT',   (/ 'Rx', 'Ry', 'Rz' /))
+        close(statUnit)
+    end subroutine Beam_ReportDispFieldStat
+
+    subroutine Beam_ReportDispGroup(fileUnit, fieldGroup, groupName, dofName)
+        implicit none
+        integer, intent(in) :: fileUnit
+        real(8), intent(in) :: fieldGroup(1:3, 1:m_npts)
+        character(LEN=*), intent(in) :: groupName
+        character(LEN=2), intent(in) :: dofName(3)
+        real(8) :: l2(3), linfty(3)
+        integer :: i
+
+        do i = 1, 3
+            l2(i) = dsqrt(sum(fieldGroup(i,1:m_npts) * fieldGroup(i,1:m_npts)) / dble(m_npts))
+            linfty(i) = maxval(dabs(fieldGroup(i,1:m_npts)))
+            write(fileUnit,'(A,1X,A,1X,A,1X,ES24.16)') 'FIELDSTAT', trim(groupName), 'L2 ' // trim(dofName(i)), l2(i)
+        enddo
+        do i = 1, 3
+            write(fileUnit,'(A,1X,A,1X,A,1X,ES24.16)') 'FIELDSTAT', trim(groupName), 'Linfinity ' // trim(dofName(i)), linfty(i)
+        enddo
+    end subroutine Beam_ReportDispGroup
 
     subroutine Beam_InitDspVelAcc(dsp, vel, acc)
         implicit none
