@@ -21,6 +21,17 @@ gfortran -ffree-line-length-none -o StructureSolver StructureSolver.f90
 gfortran -ffree-line-length-none -o BeamStructure BeamStructure.f90
 ./BeamStructure
 ```
+### Regression test
+```
+bash test.sh
+```
+The regression test recompiles both solvers, runs every case under `examples/`, and compares:
+- `fieldstat_BeamStructure.dat` with `old_fieldstat_BeamStructure.dat`
+- `fieldstat_StructureSolver.dat` with `old_fieldstat_StructureSolver.dat`
+
+Each `fieldstat` file contains displacement norms only:
+- `FIELDSTAT DISP_TRANS ...` for `Ux/Uy/Uz`
+- `FIELDSTAT DISP_ROT ...` for `Rx/Ry/Rz`
 ***********************************************************************
 ## Book
 - ISBN 9787040258417 有限元基础教程 曾攀
@@ -288,6 +299,8 @@ gfortran -ffree-line-length-none -o BeamStructure BeamStructure.f90
 cd examples/dynamic/
 ./../../BeamStructure
 ```
+The current code also writes `fieldstat_BeamStructure.dat` for regression testing.
+
 or use the changed code
 ```
 cd examples/dynamic/
@@ -395,6 +408,8 @@ gfortran -ffree-line-length-none -o StructureSolver StructureSolver.f90
 cd examples/dynamic/
 ./../../StructureSolver
 ```
+The current code also writes `fieldstat_StructureSolver.dat` for regression testing.
+
 or use the changed code
 ```
 cd examples/dynamic/
