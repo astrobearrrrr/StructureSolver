@@ -1,2 +1,2 @@
-#ifx  BeamStructure.f90  -lmkl_intel_ilp64 -lmkl_intel_thread -lmkl_core  -liomp5  -free -i8
-ifx    -qmkl-ilp64=sequential   BeamStructure.f90
+gfortran -ffree-line-length-none -o StructureSolver StructureSolver.f90
+gfortran -ffree-line-length-none -o BeamStructure BeamStructure.f90

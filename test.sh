@@ -1,39 +1,59 @@
-gfortran -ffree-line-length-none -o StructureSolver StructureSolver.f90
-gfortran -ffree-line-length-none -o BeamStructure BeamStructure.f90
-cd examples
-for frqcase in */; do
-  if [ -d "${frqcase}" ]; then
-    frqcase="${frqcase%/}"
-    echo "Start checking ${frqcase} case ..."
-    start=$(date +%s)
-    cd "${frqcase}"
-    rm -rf test
-    mkdir test
-    cp -r ./*.dat test/
-    cd test
+#!/usr/bin/env bash
+set -euo pipefail
 
-    ./../../../BeamStructure > /dev/null 2>&1
-    ./../../../StructureSolver > /dev/null 2>&1
+bash make.sh
 
-    beam_result=$(diff -q disp_ele_2_BeamStructure.dat old_disp_ele_2_BeamStructure.dat || true)
-    structure_result=$(diff -q disp_ele_2_StructureSolver.dat old_disp_ele_2_StructureSolver.dat || true)
+compare_fieldstat() {
+  local result_file=$1
+  local baseline_file=$2
+  local solver_name=$3
 
-    end=$(date +%s)
-    echo -n "Time used $(($end-$start)) seconds. "
-    if [ -z "${beam_result}" ] && [ -z "${structure_result}" ]; then
-      echo "Passed."
-    else
-      echo "Failed."
-      if [ -n "${beam_result}" ]; then
-        echo "BeamStructure result differs from old_disp_ele_2_BeamStructure.dat"
-      fi
-      if [ -n "${structure_result}" ]; then
-        echo "StructureSolver result differs from old_disp_ele_2_StructureSolver.dat"
-      fi
-    fi
-
-    cd ..
-    rm -rf test
-    cd ..
+  if [ ! -f "${baseline_file}" ]; then
+    echo "${solver_name} baseline missing: ${baseline_file}"
+    return 2
   fi
+
+  if diff -q "${result_file}" "${baseline_file}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "${solver_name} result differs from ${baseline_file}"
+  return 1
+}
+
+cd examples
+for testcase in */; do
+  [ -d "${testcase}" ] || continue
+  testcase="${testcase%/}"
+
+  echo "Start checking ${testcase} case ..."
+  start=$(date +%s)
+
+  cd "${testcase}"
+  rm -rf test
+  mkdir test
+  cp -r ./*.dat test/
+  cd test
+
+  ./../../../BeamStructure > /dev/null 2>&1
+  ./../../../StructureSolver > /dev/null 2>&1
+
+  beam_status=0
+  structure_status=0
+
+  compare_fieldstat fieldstat_BeamStructure.dat old_fieldstat_BeamStructure.dat BeamStructure || beam_status=$?
+  compare_fieldstat fieldstat_StructureSolver.dat old_fieldstat_StructureSolver.dat StructureSolver || structure_status=$?
+
+  end=$(date +%s)
+  echo -n "Time used $(($end-$start)) seconds. "
+
+  if [ "${beam_status}" -eq 0 ] && [ "${structure_status}" -eq 0 ]; then
+    echo "Passed."
+  else
+    echo "Failed."
+  fi
+
+  cd ..
+  rm -rf test
+  cd ..
 done
