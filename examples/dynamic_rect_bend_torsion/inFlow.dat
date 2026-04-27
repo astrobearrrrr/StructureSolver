@@ -1,0 +1,8 @@
+filename            Newmarkgamma                Newmarkbeta     dt          dampM1      dampK1    gamma1    alphaf1
+RectBT.dat          0.5d0                       0.25d0          5.0d-4      0d0         0d0       1d0       0d0
+maxDynamic(step)    maxNewtonRaphson(iterMax)   dtol
+200                 10                          1d-8
+
+
+
+! rectangular cantilever, constant tip force and torque

@@ -1,0 +1,45 @@
+*Heading
+** Rectangular cantilever beam: bending + torsion dynamic comparison
+** Units: m, N, kg, s, Pa
+*Preprint, echo=NO, model=NO, history=NO, contact=NO
+*Node
+1, 0.0, 0.0, 0.0
+2, 0.5, 0.0, 0.0
+3, 1.0, 0.0, 0.0
+*Element, type=B31
+1, 1, 2
+2, 2, 3
+*Nset, nset=NFIX
+1,
+*Nset, nset=NMID
+2,
+*Nset, nset=NTIP
+3,
+*Elset, elset=EALL
+1, 2
+*Material, name=STEEL_RECT
+*Density
+7850.
+*Elastic
+2.10E11, 0.30
+** local beam axis 1 is along global Y, local axis 2 is along global Z
+*Beam Section, elset=EALL, material=STEEL_RECT, section=RECT
+0.04, 0.02
+0., 1., 0.
+*Boundary
+NFIX, 1, 6
+*Step, name=DYNAMIC_COMPARE, nlgeom=YES, inc=10000
+*Dynamic, alpha=0.0
+5.0E-4, 1.0E-1, 1.0E-8, 5.0E-4
+*Cload
+NTIP, 2, -100.
+NTIP, 4, 50.
+*Output, field, number interval=20
+*Node Output
+U, UR, V, A
+*Output, history, frequency=1
+*Node Output, nset=NMID
+U, UR
+*Node Output, nset=NTIP
+U, UR
+*End Step
