@@ -14,8 +14,9 @@ module BeamStructure
     type :: Segment
         private
         integer :: m_localToGlobal(1:nElmtDofs)
-        real(8) :: x0(1:nElmtDofs),x1(1:nElmtDofs)
+        real(8) :: x0(1:nElmtDofs),x1(1:nElmtDofs),x2(1:nElmtDofs)
         real(8) :: dx0, dy0, dz0, dx1, dy1, dz1, xll0, xmm0, xnn0, xll1, xmm1, xnn1, len0, len1
+        real(8) :: spanL, spanR, spanDir(3)
         real(8) :: bc(1:nElmtDofs), geoFRM
         real(8) :: triad_ee(3,3),triad_n1(3,3),triad_n2(3,3)
         real(8) :: m_property(1:8)
@@ -77,7 +78,7 @@ module BeamStructure
         g_ndofs = m_npts * 6
         allocate(vBC(1:g_ndofs))
         ! load points data
-        allocate(xyz(1:3, 1:m_npts))
+        allocate(xyz(1:8, 1:m_npts))
         call Beam_ReadPoints(xyz)
         ! load matieral data
         allocate(material(1:8, 1:m_nmaterials))
@@ -92,8 +93,8 @@ module BeamStructure
 
     subroutine Beam_ReadPoints(xyz)
         implicit none
-        real(8) :: xyz(1:3, 1:m_npts)
-        integer :: fileiD = 996, tmpid, i
+        real(8) :: xyz(1:8, 1:m_npts)
+        integer :: fileiD = 996, tmpid, i, ios
         character(LEN=1000) :: buffer
 
         open(unit=fileiD, file = m_meshfile )
@@ -104,7 +105,7 @@ module BeamStructure
             enddo
             read(fileiD,*) m_npts
             do i = 1,m_npts
-                read(fileiD,*)tmpid,xyz(1,i),xyz(2,i),xyz(3,i)
+                read(fileiD,*) tmpid,xyz(1,i),xyz(2,i),xyz(3,i),xyz(4,i),xyz(5,i),xyz(6,i),xyz(7,i),xyz(8,i)
             enddo
         close(fileiD)
     end subroutine Beam_ReadPoints
@@ -149,7 +150,7 @@ module BeamStructure
 
     subroutine Beam_ReadBuildElements(xyz, material, boundary)
         implicit none
-        real(8) :: xyz(1:3, 1:m_npts), material(1:8, m_nmaterials), boundary(1:6, 1:m_npts)
+        real(8) :: xyz(1:8, 1:m_npts), material(1:8, m_nmaterials), boundary(1:6, 1:m_npts)
         integer :: fileiD = 996, tmpid, n, i, j, k, imat, itype
         character(LEN=1000) :: buffer
 
@@ -171,7 +172,7 @@ module BeamStructure
 
     subroutine Segment_init(this, p0Id, p1Id, xyz, material, boundary)
         class(Segment), intent(inout) :: this
-        real(8), intent(in) :: xyz(1:3, 1:m_npts), material(1:8), boundary(1:6, 1:m_npts)
+        real(8), intent(in) :: xyz(1:8, 1:m_npts), material(1:8), boundary(1:6, 1:m_npts)
         integer :: p0Id, p1Id, i, offset0, offset1
         ! material property
         this%m_property(1:8) = material(1:8)
@@ -184,12 +185,16 @@ module BeamStructure
         enddo
         this%x0(1:3) = xyz(1:3, p0Id)
         this%x0(7:9) = xyz(1:3, p1Id)
+        this%spanL = 0.5d0 * (xyz(4,p0Id) + xyz(4,p1Id))
+        this%spanR = 0.5d0 * (xyz(5,p0Id) + xyz(5,p1Id))
+        this%spanDir(1:3) = 0.5d0 * (xyz(6:8,p0Id) + xyz(6:8,p1Id))
         do i=1,3
             ! initialise angle dofs
             this%x0(4:6) = 0.0d0
             this%x0(10:12) = 0.0d0
         enddo
         this%x1(1:12) = this%x0(1:12)
+        this%x2(1:12) = this%x1(1:12)
         this%bc(1:6) = boundary(1:6, p0Id)
         this%bc(7:12) = boundary(1:6, p1Id)
         this%dx0  = this%x0(7) - this%x0(1)
@@ -326,7 +331,7 @@ module BeamStructure
         real(8), intent(inout) :: dsp(1:6, 1:m_npts), vel(1:6, 1:m_npts), acc(1:6, 1:m_npts)
         integer :: i
         do i=1,m_nelmts
-            vBC(m_elements(i)%m_localToGlobal(1:12))=m_elements(i)%x0(1:12)-m_elements(i)%x1(1:12)
+            vBC(m_elements(i)%m_localToGlobal(1:12))=m_elements(i)%x2(1:12)-m_elements(i)%x1(1:12)
         enddo
         dspO(1:6, 1:m_npts) = dsp(1:6, 1:m_npts)
         velO(1:6, 1:m_npts) = vel(1:6, 1:m_npts)
@@ -337,10 +342,10 @@ module BeamStructure
         implicit none
         real(8) :: dspn(1:g_ndofs), dspnn(1:6, 1:m_npts)
         real(8), intent(inout) :: dsp(1:6, 1:m_npts)
-        real(8) :: beta0,beta,zi,z0,maxramp,dnorm
-        integer :: iter,i,node0,node1
+        real(8) :: beta0,beta,zi,z0,dnorm
+        integer :: iter,i,node0,node1,maxramp
         beta0 = 1.0d0
-        maxramp = 0.0d0
+        maxramp = 1
         if    (iter <= maxramp) then
             zi=2.0d0**(iter)
             z0=2.0d0**(maxramp)
