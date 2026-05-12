@@ -436,6 +436,8 @@ module BeamStructure
         ! ISBN 9787302388333 Xiong Zhang. P113-114
         ! [C]=dampM*[M]+dampK*[K]
         ! ISBN 9781441929105 James F. Doyle. P268
+        ! Newton-Raphson method
+        ! ISBN 9781441929105 James F. Doyle. P353: The book shows the full Newton-Raphson method with alpha=0.25 and delta=0.5
         implicit none
         class(Segment), intent(inout) :: this
         real(8) :: b(1:g_ndofs)
@@ -573,6 +575,7 @@ module BeamStructure
 
     subroutine Segment_FormMassMatrix(this)
         ! ELeMent MASs matrix for the FRaMe
+        ! Same as Abaqus B31 Timoshenko frame
         ! Lumped mass matrix
         ! ISBN 9781441929105 James F. Doyle. P273
         ! ISBN 9780792312086 James F. Doyle. P423
@@ -610,6 +613,9 @@ module BeamStructure
         ! calculates the element stiffness matrices.
         ! https://people.duke.edu/~hpgavin/cee421/frame-finite-def.pdf
         ! Henri Gavin, Department of Civil and Environmental Engineering, Duke University
+        ! For Euler-Bernoulli :
+        ! ISBN 9787040258417 Zeng Pan. P70
+        ! ISBN 9780792312086 James F. Doyle. P81
     
         implicit none
         class(Segment), intent(inout) :: this
@@ -712,6 +718,9 @@ module BeamStructure
         ! ELeMent GEOMetric stiffness matrix for Timoshenko FRaMe
         ! https://people.duke.edu/~hpgavin/cee421/frame-finite-def.pdf
         ! Henri Gavin, Department of Civil and Environmental Engineering, Duke University
+        ! For Euler-Bernoulli :
+        ! ISBN 9781441929105 James F. Doyle. P217,228,229,405
+        ! ISBN 9780792312086 James F. Doyle. P129,424
         !
         ! DOF order:
         ! [u1,v1,w1,tx1,ty1,tz1,u2,v2,w2,tx2,ty2,tz2]
@@ -969,7 +978,7 @@ module BeamStructure
 
     subroutine Segment_BodyStress_D(this)
         ! Element nodal force
-        ! ISBN 9781441929105 James F. Doyle. P353
+        ! ISBN 9781441929105 James F. Doyle. P214,P353
         implicit none
         class(Segment), intent(inout) :: this
         real(8) :: triad_00(3,3),triad_11(3,3),triad_22(3,3)
@@ -1105,6 +1114,10 @@ module BeamStructure
     end subroutine Segment_global_to_local
 
     subroutine Segment_UpdateTriad_D(this,dspnn)
+        ! update angle of  triads
+        ! ISBN 9781441929105 James F. Doyle. P184 Equ.(3.4)
+        ! triad_n1: the triad of node 1 in beam
+        ! triad_n2: the triad of node 2 in beam
         implicit none
         class(Segment), intent(inout) :: this
         real(8):: dspnn(1:6,1:m_npts)
