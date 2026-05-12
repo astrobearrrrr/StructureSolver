@@ -279,7 +279,7 @@ module BeamStructure
                 if(dnorm .le. dtol) exit
             enddo
             ! open(unit = 111, file = 'disp_ele_2_BeamStructure.dat', position = 'append')
-            ! write(111,'(12E28.5)') m_elements(50)%x1(7:12)-m_elements(50)%x0(7:12)
+            ! write(111,'(12E28.5)') m_elements(2)%x1(:)-m_elements(2)%x0(:)
             ! close(111)
             call Beam_UpdateVelAcc(dspO, velO, accO, dsp, vel, acc)
         enddo
