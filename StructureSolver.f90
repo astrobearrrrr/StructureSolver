@@ -1157,14 +1157,14 @@ subroutine elmstfFRM_D(length, ix, iy, iz,area, emod, gmod, ek ,nELt)
     emlen2 = emlen*Invlength
     emlen3 = emlen2*Invlength
 
-    ! if (nELt .eq. 1) then
-    !     ek(1,1)   =   area*emlen
-    ! !
-    ! elseif (nELt .eq. 2) then
-    !     ek(1,1)   =   area*emlen
-    !     ek(2,2)   =   area*emlen
-    ! !
-    ! elseif (nELt .eq. 3) then
+    if (nELt .eq. 1) then
+        ek(1,1)   =   area*emlen
+    !
+    elseif (nELt .eq. 2) then
+        ek(1,1)   =   area*emlen
+        ek(2,2)   =   area*emlen
+    !
+    elseif (nELt .eq. 3) then
         ek(1,1)   =   area*emlen
         ek(2,2)   =   12.0*emlen3*iz
         ek(3,3)   =   12.0*emlen3*iy
@@ -1174,10 +1174,10 @@ subroutine elmstfFRM_D(length, ix, iy, iz,area, emod, gmod, ek ,nELt)
     !
         ek(2,6)   =   6.0*emlen2*iz
         ek(3,5)   =  -6.0*emlen2*iy
-    ! else
-    !     write(*,*)'not this nELt:',nELt
-    !     stop
-    ! endif
+    else
+        write(*,*)'not this nELt:',nELt
+        stop
+    endif
     !
     ek(7,7)   =   ek(1,1)
     ek(8,8)   =   ek(2,2)

@@ -94,7 +94,7 @@ module BeamStructure
     subroutine Beam_ReadPoints(xyz)
         implicit none
         real(8) :: xyz(1:8, 1:m_npts)
-        integer :: fileiD = 996, tmpid, i, ios
+        integer :: fileiD = 996, tmpid, i
         character(LEN=1000) :: buffer
 
         open(unit=fileiD, file = m_meshfile )
@@ -578,12 +578,14 @@ module BeamStructure
         ! ISBN 9780792312086 James F. Doyle. P423
         implicit none
         class(Segment), intent(inout) :: this
-        real(8):: area,rho,zix,length
+        real(8):: area,rho,zix,ziy,ziz,length
         real(8):: roal
 
         area = this%m_property(3)
         rho  = this%m_property(4)
         zix  = this%m_property(6)
+        ziy  = this%m_property(7)
+        ziz  = this%m_property(8)
         length  = this%len0
 
         this%m_masMat(1:12,1:12) = 0.0d0
@@ -591,9 +593,9 @@ module BeamStructure
         this%m_masMat(1,1)     = roal
         this%m_masMat(2,2)     = roal
         this%m_masMat(3,3)     = roal
-        this%m_masMat(4,4)     = roal*zix/area
-        this%m_masMat(5,5)     = roal*length*length*alphaf
-        this%m_masMat(6,6)     = roal*length*length*alphaf
+        this%m_masMat(4,4)     = roal*(ziy+ziz)/area
+        this%m_masMat(5,5)     = roal*ziy/area
+        this%m_masMat(6,6)     = roal*ziz/area
         this%m_masMat(7,7)     = this%m_masMat(1,1)
         this%m_masMat(8,8)     = this%m_masMat(2,2)
         this%m_masMat(9,9)     = this%m_masMat(3,3)
@@ -604,163 +606,223 @@ module BeamStructure
     end subroutine Segment_FormMassMatrix
 
     subroutine Segment_FormStiffMatrix(this)
-        ! ELeMent STiFfness for FRaMe
+        ! ELeMent STiFfness for Timoshenko FRaMe
         ! calculates the element stiffness matrices.
-        ! ISBN 9787040258417 Zeng Pan. P70
-        ! ISBN 9780792312086 James F. Doyle. P81
+        ! https://people.duke.edu/~hpgavin/cee421/frame-finite-def.pdf
+        ! Henri Gavin, Department of Civil and Environmental Engineering, Duke University
+    
         implicit none
         class(Segment), intent(inout) :: this
+    
         real(8):: emod,gmod,area,zix,ziy,ziz,length
         real(8):: Invlength
-        real(8):: emlen,emlen2,emlen3
-
+        real(8):: ksy,ksz,phiy,phiz
+        real(8):: ky1,ky2,ky3,ky4
+        real(8):: kz1,kz2,kz3,kz4
+    
         emod = this%m_property(1)
         gmod = this%m_property(2)
         area = this%m_property(3)
-        zix  = this%m_property(6)
-        ziy  = this%m_property(7)
-        ziz  = this%m_property(8)
-        length  = this%len0
-
-        ! initialize all ek elements to zero
-        this%m_stfMat(1:12,1:12)=0.0
-
-        ! STIFFNESS matrix in local coordinates
-        ! emod is Modulus of elasticity
-        Invlength = 1/length
-        emlen  = emod*Invlength
-        emlen2 = emlen*Invlength
-        emlen3 = emlen2*Invlength
-
-        this%m_stfMat(1,1)   =    area*emlen
-        this%m_stfMat(2,2)   =    12.0*emlen3*ziz
-        this%m_stfMat(3,3)   =    12.0*emlen3*ziy
-        this%m_stfMat(4,4)   =    gmod*zix*Invlength
-        this%m_stfMat(5,5)   =    4.0*emlen*ziy
-        this%m_stfMat(6,6)   =    4.0*emlen*ziz
-
-        this%m_stfMat(2,6)   =    6.0*emlen2*ziz
-        this%m_stfMat(3,5)   =   -6.0*emlen2*ziy
-
-        this%m_stfMat(7,7)   =    this%m_stfMat(1,1)
-        this%m_stfMat(8,8)   =    this%m_stfMat(2,2)
-        this%m_stfMat(9,9)   =    this%m_stfMat(3,3)
-        this%m_stfMat(10,10) =    this%m_stfMat(4,4)
-        this%m_stfMat(11,11) =    this%m_stfMat(5,5)
-        this%m_stfMat(12,12) =    this%m_stfMat(6,6)
-
-        this%m_stfMat(1,7)   =   -this%m_stfMat(1,1)
-        this%m_stfMat(2,8)   =   -this%m_stfMat(2,2)
-        this%m_stfMat(2,12)  =    this%m_stfMat(2,6)
-        this%m_stfMat(3,9)   =   -this%m_stfMat(3,3)
-        this%m_stfMat(3,11)  =    this%m_stfMat(3,5)
-        this%m_stfMat(4,10)  =   -this%m_stfMat(4,4)
-        this%m_stfMat(5,9)   =   -this%m_stfMat(3,5)
-        this%m_stfMat(5,11)  =    this%m_stfMat(5,5)/2.0
-        this%m_stfMat(6,8)   =   -this%m_stfMat(2,6)
-        this%m_stfMat(6,12)  =    this%m_stfMat(6,6)/2.0
-
-        this%m_stfMat(8,12)  =   -this%m_stfMat(2,6)
-        this%m_stfMat(9,11)  =   -this%m_stfMat(3,5)
-
-        this%m_stfMat(6,2)   =    this%m_stfMat(2,6)
-        this%m_stfMat(5,3)   =    this%m_stfMat(3,5)
-        this%m_stfMat(7,1)   =    this%m_stfMat(1,7)
-        this%m_stfMat(8,2)   =    this%m_stfMat(2,8)
-        this%m_stfMat(12,2)  =    this%m_stfMat(2,12)
-        this%m_stfMat(9,3)   =    this%m_stfMat(3,9)
-        this%m_stfMat(11,3)  =    this%m_stfMat(3,11)
-        this%m_stfMat(10,4)  =    this%m_stfMat(4,10)
-        this%m_stfMat(9,5)   =    this%m_stfMat(5,9)
-        this%m_stfMat(11,5)  =    this%m_stfMat(5,11)
-        this%m_stfMat(8,6)   =    this%m_stfMat(6,8)
-        this%m_stfMat(12,6)  =    this%m_stfMat(6,12)
-        this%m_stfMat(12,8)  =    this%m_stfMat(8,12)
-        this%m_stfMat(11,9)  =    this%m_stfMat(9,11)
+        zix  = this%m_property(6)   ! St. Venant torsion constant Jt
+        ziy  = this%m_property(7)   ! Iy
+        ziz  = this%m_property(8)   ! Iz
+        length = this%len0
+    
+        this%m_stfMat(1:12,1:12)=0.0d0
+    
+        Invlength = 1.0d0/length
+    
+        ! shear correction factors
+        ksy = 5.0d0/6.0d0
+        ksz = 5.0d0/6.0d0
+    
+        ! Timoshenko shear parameters
+        phiy = 12.0d0*emod*ziz/(ksy*gmod*area*length*length)
+        phiz = 12.0d0*emod*ziy/(ksz*gmod*area*length*length)
+    
+        ! v-theta_z plane, bending about local z, use Iz
+        ky1 = 12.0d0*emod*ziz/(length**3*(1.0d0+phiy))
+        ky2 =  6.0d0*emod*ziz/(length**2*(1.0d0+phiy))
+        ky3 = (4.0d0+phiy)*emod*ziz/(length*(1.0d0+phiy))
+        ky4 = (2.0d0-phiy)*emod*ziz/(length*(1.0d0+phiy))
+    
+        ! w-theta_y plane, bending about local y, use Iy
+        kz1 = 12.0d0*emod*ziy/(length**3*(1.0d0+phiz))
+        kz2 =  6.0d0*emod*ziy/(length**2*(1.0d0+phiz))
+        kz3 = (4.0d0+phiz)*emod*ziy/(length*(1.0d0+phiz))
+        kz4 = (2.0d0-phiz)*emod*ziy/(length*(1.0d0+phiz))
+    
+        ! diagonal terms
+        this%m_stfMat(1,1)   = area*emod*Invlength
+        this%m_stfMat(2,2)   = ky1
+        this%m_stfMat(3,3)   = kz1
+        this%m_stfMat(4,4)   = gmod*zix*Invlength
+        this%m_stfMat(5,5)   = kz3
+        this%m_stfMat(6,6)   = ky3
+    
+        this%m_stfMat(7,7)   = this%m_stfMat(1,1)
+        this%m_stfMat(8,8)   = this%m_stfMat(2,2)
+        this%m_stfMat(9,9)   = this%m_stfMat(3,3)
+        this%m_stfMat(10,10) = this%m_stfMat(4,4)
+        this%m_stfMat(11,11) = this%m_stfMat(5,5)
+        this%m_stfMat(12,12) = this%m_stfMat(6,6)
+    
+        ! upper triangular terms
+        this%m_stfMat(1,7)   = -this%m_stfMat(1,1)
+    
+        this%m_stfMat(2,6)   =  ky2
+        this%m_stfMat(2,8)   = -ky1
+        this%m_stfMat(2,12)  =  ky2
+        this%m_stfMat(6,8)   = -ky2
+        this%m_stfMat(6,12)  =  ky4
+        this%m_stfMat(8,12)  = -ky2
+    
+        this%m_stfMat(3,5)   = -kz2
+        this%m_stfMat(3,9)   = -kz1
+        this%m_stfMat(3,11)  = -kz2
+        this%m_stfMat(5,9)   =  kz2
+        this%m_stfMat(5,11)  =  kz4
+        this%m_stfMat(9,11)  =  kz2
+    
+        this%m_stfMat(4,10)  = -this%m_stfMat(4,4)
+    
+        ! symmetric terms
+        this%m_stfMat(7,1)   = this%m_stfMat(1,7)
+    
+        this%m_stfMat(6,2)   = this%m_stfMat(2,6)
+        this%m_stfMat(8,2)   = this%m_stfMat(2,8)
+        this%m_stfMat(12,2)  = this%m_stfMat(2,12)
+        this%m_stfMat(8,6)   = this%m_stfMat(6,8)
+        this%m_stfMat(12,6)  = this%m_stfMat(6,12)
+        this%m_stfMat(12,8)  = this%m_stfMat(8,12)
+    
+        this%m_stfMat(5,3)   = this%m_stfMat(3,5)
+        this%m_stfMat(9,3)   = this%m_stfMat(3,9)
+        this%m_stfMat(11,3)  = this%m_stfMat(3,11)
+        this%m_stfMat(9,5)   = this%m_stfMat(5,9)
+        this%m_stfMat(11,5)  = this%m_stfMat(5,11)
+        this%m_stfMat(11,9)  = this%m_stfMat(9,11)
+    
+        this%m_stfMat(10,4)  = this%m_stfMat(4,10)
+    
         return
     end subroutine Segment_FormStiffMatrix
 
     subroutine Segment_FormGeomMatrix(this)
-        ! ELeMent GEOMetric stiffness matrix for a FRaMe
-        ! ISBN 9781441929105 James F. Doyle. P217,228,229,405
-        ! ISBN 9780792312086 James F. Doyle. P129,424
+        ! ELeMent GEOMetric stiffness matrix for Timoshenko FRaMe
+        ! https://people.duke.edu/~hpgavin/cee421/frame-finite-def.pdf
+        ! Henri Gavin, Department of Civil and Environmental Engineering, Duke University
+        !
+        ! DOF order:
+        ! [u1,v1,w1,tx1,ty1,tz1,u2,v2,w2,tx2,ty2,tz2]
         implicit none
         class(Segment), intent(inout) :: this
-        real(8):: length
-        real(8):: s!s is axial forces
-        real(8):: emlenz,alpha
-        integer:: i
-
+    
+        real(8):: emod,gmod,area,zix,ziy,ziz,length
+        real(8):: s
+        real(8):: ksy,ksz,phiy,phiz
+        real(8):: gy1,gy2,gy3,gy4
+        real(8):: gz1,gz2,gz3,gz4
+        real(8):: gt
+    
         s = this%geoFRM
-
-        length  = this%len0
-
-        ! initialize all eg elements to zero
-        this%m_geoMat(1:12,1:12)=0.0d0
-        alpha   =   (s/length)*1.0d-6
-        emlenz  =   s/(30.0*length)
-        if (abs(alpha) .lt. 1.0e-10)then
-            alpha = 1.0e-10
-        endif
-        ! Frame
-        this%m_geoMat(1,1)   =    alpha
-        this%m_geoMat(2,2)   =    36*emlenz
-        this%m_geoMat(3,3)   =    36*emlenz
-        this%m_geoMat(4,4)   =    alpha
-        this%m_geoMat(5,5)   =    4.0*emlenz*length*length
-        this%m_geoMat(6,6)   =    4.0*emlenz*length*length
-
-        this%m_geoMat(2,6)   =    3.0*emlenz*length
-        this%m_geoMat(3,5)   =   -3.0*emlenz*length
-
-        ! Truss
-        ! this%m_geoMat(1,1)   =   alpha
-        ! this%m_geoMat(2,2)   =   emlenz
-        ! this%m_geoMat(3,3)   =   emlenz
-        ! this%m_geoMat(4,4)   =   alpha
-        ! this%m_geoMat(5,5)   =   0.0d0
-        ! this%m_geoMat(6,6)   =   0.0d0
-
-        this%m_geoMat(7,7)   =    this%m_geoMat(1,1)
-        this%m_geoMat(8,8)   =    this%m_geoMat(2,2)
-        this%m_geoMat(9,9)   =    this%m_geoMat(3,3)
-        this%m_geoMat(10,10) =    this%m_geoMat(4,4)
-        this%m_geoMat(11,11) =    this%m_geoMat(5,5)
-        this%m_geoMat(12,12) =    this%m_geoMat(6,6)
-
-        this%m_geoMat(1,7)   =   -this%m_geoMat(1,1)
-        this%m_geoMat(2,8)   =   -this%m_geoMat(2,2)
-        this%m_geoMat(2,12)  =    this%m_geoMat(2,6)
-        this%m_geoMat(3,9)   =   -this%m_geoMat(3,3)
-        this%m_geoMat(3,11)  =    this%m_geoMat(3,5)
-        this%m_geoMat(4,10)  =   -this%m_geoMat(4,4)
-        this%m_geoMat(5,9)   =   -this%m_geoMat(3,5)
-        this%m_geoMat(5,11)  =   -this%m_geoMat(5,5)/4.0
-        this%m_geoMat(6,8)   =   -this%m_geoMat(2,6)
-        this%m_geoMat(6,12)  =   -this%m_geoMat(6,6)/4.0
-
-        this%m_geoMat(8,12)  =   -this%m_geoMat(2,6)
-        this%m_geoMat(9,11)  =   -this%m_geoMat(3,5)
-
-        this%m_geoMat(6,2)   =    this%m_geoMat(2,6)
-        this%m_geoMat(5,3)   =    this%m_geoMat(3,5)
-        this%m_geoMat(7,1)   =    this%m_geoMat(1,7)
-        this%m_geoMat(8,2)   =    this%m_geoMat(2,8)
-        this%m_geoMat(12,2)  =    this%m_geoMat(2,12)
-        this%m_geoMat(9,3)   =    this%m_geoMat(3,9)
-        this%m_geoMat(11,3)  =    this%m_geoMat(3,11)
-        this%m_geoMat(10,4)  =    this%m_geoMat(4,10)
-        this%m_geoMat(9,5)   =    this%m_geoMat(5,9)
-        this%m_geoMat(11,5)  =    this%m_geoMat(5,11)
-        this%m_geoMat(8,6)   =    this%m_geoMat(6,8)
-        this%m_geoMat(12,6)  =    this%m_geoMat(6,12)
-        this%m_geoMat(12,8)  =    this%m_geoMat(8,12)
-        this%m_geoMat(11,9)  =    this%m_geoMat(9,11)
-
-        ! check diagonal terms
-        do    i=1,12
-            if (dabs(this%m_geoMat(i,i)) .lt. 1.0d-20) this%m_geoMat(i,i)=1.0d-20
-        enddo
+    
+        emod = this%m_property(1)
+        gmod = this%m_property(2)
+        area = this%m_property(3)
+    
+        ! zix = Jt, St. Venant torsion constant
+        ! ziy = Iy
+        ! ziz = Iz
+        zix  = this%m_property(6)
+        ziy  = this%m_property(7)
+        ziz  = this%m_property(8)
+    
+        length = this%len0
+    
+        ! initialize all geometric stiffness terms to zero
+        this%m_geoMat(1:12,1:12) = 0.0d0
+    
+        ! shear correction factors
+        ksy = 5.0d0/6.0d0
+        ksz = 5.0d0/6.0d0
+    
+        ! Timoshenko shear parameters
+        ! v-tz plane bends about local z, uses Iz
+        ! w-ty plane bends about local y, uses Iy
+        phiy = 12.0d0*emod*ziz/(ksy*gmod*area*length*length)
+        phiz = 12.0d0*emod*ziy/(ksz*gmod*area*length*length)
+    
+        ! ------------------------------------------------------------
+        ! v - theta_z plane, DOFs 2,6,8,12
+        ! ------------------------------------------------------------
+        gy1 = s/length * (6.0d0/5.0d0 + 2.0d0*phiy + phiy*phiy) / (1.0d0 + phiy)**2
+        gy2 = s/length * (length/10.0d0) / (1.0d0 + phiy)**2
+        gy3 = s/length * (2.0d0*length*length/15.0d0 + phiy*length*length/6.0d0 + phiy*phiy*length*length/12.0d0) / (1.0d0 + phiy)**2
+        gy4 = s/length * (-length*length/30.0d0 - phiy*length*length/6.0d0 - phiy*phiy*length*length/12.0d0) / (1.0d0 + phiy)**2
+    
+        this%m_geoMat(2,2)   =  gy1
+        this%m_geoMat(6,6)   =  gy3
+        this%m_geoMat(8,8)   =  gy1
+        this%m_geoMat(12,12) =  gy3
+    
+        this%m_geoMat(2,6)   =  gy2
+        this%m_geoMat(2,8)   = -gy1
+        this%m_geoMat(2,12)  =  gy2
+        this%m_geoMat(6,8)   = -gy2
+        this%m_geoMat(6,12)  =  gy4
+        this%m_geoMat(8,12)  = -gy2
+    
+        ! ------------------------------------------------------------
+        ! w - theta_y plane, DOFs 3,5,9,11
+        ! sign convention follows your elastic stiffness matrix
+        ! ------------------------------------------------------------
+        gz1 = s/length * (6.0d0/5.0d0 + 2.0d0*phiz + phiz*phiz) / (1.0d0 + phiz)**2
+        gz2 = s/length * (length/10.0d0) / (1.0d0 + phiz)**2
+        gz3 = s/length * (2.0d0*length*length/15.0d0 + phiz*length*length/6.0d0 + phiz*phiz*length*length/12.0d0) / (1.0d0 + phiz)**2
+        gz4 = s/length * (-length*length/30.0d0 - phiz*length*length/6.0d0 - phiz*phiz*length*length/12.0d0) / (1.0d0 + phiz)**2
+    
+        this%m_geoMat(3,3)   =  gz1
+        this%m_geoMat(5,5)   =  gz3
+        this%m_geoMat(9,9)   =  gz1
+        this%m_geoMat(11,11) =  gz3
+    
+        this%m_geoMat(3,5)   = -gz2
+        this%m_geoMat(3,9)   = -gz1
+        this%m_geoMat(3,11)  = -gz2
+        this%m_geoMat(5,9)   =  gz2
+        this%m_geoMat(5,11)  =  gz4
+        this%m_geoMat(9,11)  =  gz2
+    
+        ! ------------------------------------------------------------
+        ! torsional geometric stiffness
+        ! standard Timoshenko/frame form
+        ! ------------------------------------------------------------
+        gt = s*zix/(area*length)
+    
+        this%m_geoMat(4,4)   =  gt
+        this%m_geoMat(4,10)  = -gt
+        this%m_geoMat(10,10) =  gt
+    
+        ! ------------------------------------------------------------
+        ! symmetric terms
+        ! ------------------------------------------------------------
+        this%m_geoMat(6,2)   = this%m_geoMat(2,6)
+        this%m_geoMat(8,2)   = this%m_geoMat(2,8)
+        this%m_geoMat(12,2)  = this%m_geoMat(2,12)
+        this%m_geoMat(8,6)   = this%m_geoMat(6,8)
+        this%m_geoMat(12,6)  = this%m_geoMat(6,12)
+        this%m_geoMat(12,8)  = this%m_geoMat(8,12)
+    
+        this%m_geoMat(5,3)   = this%m_geoMat(3,5)
+        this%m_geoMat(9,3)   = this%m_geoMat(3,9)
+        this%m_geoMat(11,3)  = this%m_geoMat(3,11)
+        this%m_geoMat(9,5)   = this%m_geoMat(5,9)
+        this%m_geoMat(11,5)  = this%m_geoMat(5,11)
+        this%m_geoMat(11,9)  = this%m_geoMat(9,11)
+    
+        this%m_geoMat(10,4)  = this%m_geoMat(4,10)
+    
         return
     end subroutine Segment_FormGeomMatrix
 
