@@ -14,8 +14,9 @@ module BeamStructure
     type :: Segment
         private
         integer :: m_localToGlobal(1:nElmtDofs)
-        real(8) :: x0(1:nElmtDofs),x1(1:nElmtDofs)
+        real(8) :: x0(1:nElmtDofs),x1(1:nElmtDofs),x2(1:nElmtDofs)
         real(8) :: dx0, dy0, dz0, dx1, dy1, dz1, xll0, xmm0, xnn0, xll1, xmm1, xnn1, len0, len1
+        real(8) :: spanL, spanR, spanDir(3)
         real(8) :: bc(1:nElmtDofs), geoFRM
         real(8) :: triad_ee(3,3),triad_n1(3,3),triad_n2(3,3)
         real(8) :: m_property(1:8)
@@ -77,7 +78,7 @@ module BeamStructure
         g_ndofs = m_npts * 6
         allocate(vBC(1:g_ndofs))
         ! load points data
-        allocate(xyz(1:3, 1:m_npts))
+        allocate(xyz(1:8, 1:m_npts))
         call Beam_ReadPoints(xyz)
         ! load matieral data
         allocate(material(1:8, 1:m_nmaterials))
@@ -92,7 +93,7 @@ module BeamStructure
 
     subroutine Beam_ReadPoints(xyz)
         implicit none
-        real(8) :: xyz(1:3, 1:m_npts)
+        real(8) :: xyz(1:8, 1:m_npts)
         integer :: fileiD = 996, tmpid, i
         character(LEN=1000) :: buffer
 
@@ -104,7 +105,7 @@ module BeamStructure
             enddo
             read(fileiD,*) m_npts
             do i = 1,m_npts
-                read(fileiD,*)tmpid,xyz(1,i),xyz(2,i),xyz(3,i)
+                read(fileiD,*) tmpid,xyz(1,i),xyz(2,i),xyz(3,i),xyz(4,i),xyz(5,i),xyz(6,i),xyz(7,i),xyz(8,i)
             enddo
         close(fileiD)
     end subroutine Beam_ReadPoints
@@ -149,7 +150,7 @@ module BeamStructure
 
     subroutine Beam_ReadBuildElements(xyz, material, boundary)
         implicit none
-        real(8) :: xyz(1:3, 1:m_npts), material(1:8, m_nmaterials), boundary(1:6, 1:m_npts)
+        real(8) :: xyz(1:8, 1:m_npts), material(1:8, m_nmaterials), boundary(1:6, 1:m_npts)
         integer :: fileiD = 996, tmpid, n, i, j, k, imat, itype
         character(LEN=1000) :: buffer
 
@@ -171,7 +172,7 @@ module BeamStructure
 
     subroutine Segment_init(this, p0Id, p1Id, xyz, material, boundary)
         class(Segment), intent(inout) :: this
-        real(8), intent(in) :: xyz(1:3, 1:m_npts), material(1:8), boundary(1:6, 1:m_npts)
+        real(8), intent(in) :: xyz(1:8, 1:m_npts), material(1:8), boundary(1:6, 1:m_npts)
         integer :: p0Id, p1Id, i, offset0, offset1
         ! material property
         this%m_property(1:8) = material(1:8)
@@ -184,12 +185,16 @@ module BeamStructure
         enddo
         this%x0(1:3) = xyz(1:3, p0Id)
         this%x0(7:9) = xyz(1:3, p1Id)
+        this%spanL = 0.5d0 * (xyz(4,p0Id) + xyz(4,p1Id))
+        this%spanR = 0.5d0 * (xyz(5,p0Id) + xyz(5,p1Id))
+        this%spanDir(1:3) = 0.5d0 * (xyz(6:8,p0Id) + xyz(6:8,p1Id))
         do i=1,3
             ! initialise angle dofs
             this%x0(4:6) = 0.0d0
             this%x0(10:12) = 0.0d0
         enddo
         this%x1(1:12) = this%x0(1:12)
+        this%x2(1:12) = this%x1(1:12)
         this%bc(1:6) = boundary(1:6, p0Id)
         this%bc(7:12) = boundary(1:6, p1Id)
         this%dx0  = this%x0(7) - this%x0(1)
@@ -246,7 +251,7 @@ module BeamStructure
             call m_elements(i)%InitTriad_D
             ! FormMass
             call m_elements(i)%FormMassMatrix
-            call m_elements(i)%RotateMatrix(m_elements(i)%xll0,m_elements(i)%xmm0,m_elements(i)%xnn0)
+            call m_elements(i)%RotateMatrix
             call m_elements(i)%RKR(m_elements(i)%m_masMat)
         enddo
 
@@ -326,7 +331,7 @@ module BeamStructure
         real(8), intent(inout) :: dsp(1:6, 1:m_npts), vel(1:6, 1:m_npts), acc(1:6, 1:m_npts)
         integer :: i
         do i=1,m_nelmts
-            vBC(m_elements(i)%m_localToGlobal(1:12))=m_elements(i)%x0(1:12)-m_elements(i)%x1(1:12)
+            vBC(m_elements(i)%m_localToGlobal(1:12))=m_elements(i)%x2(1:12)-m_elements(i)%x1(1:12)
         enddo
         dspO(1:6, 1:m_npts) = dsp(1:6, 1:m_npts)
         velO(1:6, 1:m_npts) = vel(1:6, 1:m_npts)
@@ -337,10 +342,10 @@ module BeamStructure
         implicit none
         real(8) :: dspn(1:g_ndofs), dspnn(1:6, 1:m_npts)
         real(8), intent(inout) :: dsp(1:6, 1:m_npts)
-        real(8) :: beta0,beta,zi,z0,maxramp,dnorm
-        integer :: iter,i,node0,node1
+        real(8) :: beta0,beta,zi,z0,dnorm
+        integer :: iter,i,node0,node1,maxramp
         beta0 = 1.0d0
-        maxramp = 0.0d0
+        maxramp = 1
         if    (iter <= maxramp) then
             zi=2.0d0**(iter)
             z0=2.0d0**(maxramp)
@@ -412,7 +417,7 @@ module BeamStructure
         !update m_coefMat
         call this%FormGeomMatrix
 
-        call this%RotateMatrix(this%xll1,this%xmm1,this%xnn1)
+        call this%RotateMatrix
 
         call this%RKR(this%m_stfMat)
 
@@ -431,6 +436,8 @@ module BeamStructure
         ! ISBN 9787302388333 Xiong Zhang. P113-114
         ! [C]=dampM*[M]+dampK*[K]
         ! ISBN 9781441929105 James F. Doyle. P268
+        ! Newton-Raphson method
+        ! ISBN 9781441929105 James F. Doyle. P353: The book shows the full Newton-Raphson method with alpha=0.25 and delta=0.5
         implicit none
         class(Segment), intent(inout) :: this
         real(8) :: b(1:g_ndofs)
@@ -568,17 +575,20 @@ module BeamStructure
 
     subroutine Segment_FormMassMatrix(this)
         ! ELeMent MASs matrix for the FRaMe
+        ! Same as Abaqus B31 Timoshenko frame
         ! Lumped mass matrix
         ! ISBN 9781441929105 James F. Doyle. P273
         ! ISBN 9780792312086 James F. Doyle. P423
         implicit none
         class(Segment), intent(inout) :: this
-        real(8):: area,rho,zix,length
+        real(8):: area,rho,zix,ziy,ziz,length
         real(8):: roal
 
         area = this%m_property(3)
         rho  = this%m_property(4)
         zix  = this%m_property(6)
+        ziy  = this%m_property(7)
+        ziz  = this%m_property(8)
         length  = this%len0
 
         this%m_masMat(1:12,1:12) = 0.0d0
@@ -586,9 +596,9 @@ module BeamStructure
         this%m_masMat(1,1)     = roal
         this%m_masMat(2,2)     = roal
         this%m_masMat(3,3)     = roal
-        this%m_masMat(4,4)     = roal*zix/area
-        this%m_masMat(5,5)     = roal*length*length*alphaf
-        this%m_masMat(6,6)     = roal*length*length*alphaf
+        this%m_masMat(4,4)     = roal*(ziy+ziz)/area
+        this%m_masMat(5,5)     = roal*ziy/area
+        this%m_masMat(6,6)     = roal*ziz/area
         this%m_masMat(7,7)     = this%m_masMat(1,1)
         this%m_masMat(8,8)     = this%m_masMat(2,2)
         this%m_masMat(9,9)     = this%m_masMat(3,3)
@@ -599,211 +609,296 @@ module BeamStructure
     end subroutine Segment_FormMassMatrix
 
     subroutine Segment_FormStiffMatrix(this)
-        ! ELeMent STiFfness for FRaMe
+        ! ELeMent STiFfness for Timoshenko FRaMe
         ! calculates the element stiffness matrices.
+        ! https://people.duke.edu/~hpgavin/cee421/frame-finite-def.pdf
+        ! Henri Gavin, Department of Civil and Environmental Engineering, Duke University
+        ! For Euler-Bernoulli :
         ! ISBN 9787040258417 Zeng Pan. P70
         ! ISBN 9780792312086 James F. Doyle. P81
+    
         implicit none
         class(Segment), intent(inout) :: this
+    
         real(8):: emod,gmod,area,zix,ziy,ziz,length
         real(8):: Invlength
-        real(8):: emlen,emlen2,emlen3
-
+        real(8):: ksy,ksz,phiy,phiz
+        real(8):: ky1,ky2,ky3,ky4
+        real(8):: kz1,kz2,kz3,kz4
+    
         emod = this%m_property(1)
         gmod = this%m_property(2)
         area = this%m_property(3)
-        zix  = this%m_property(6)
-        ziy  = this%m_property(7)
-        ziz  = this%m_property(8)
-        length  = this%len0
-
-        ! initialize all ek elements to zero
-        this%m_stfMat(1:12,1:12)=0.0
-
-        ! STIFFNESS matrix in local coordinates
-        ! emod is Modulus of elasticity
-        Invlength = 1/length
-        emlen  = emod*Invlength
-        emlen2 = emlen*Invlength
-        emlen3 = emlen2*Invlength
-
-        this%m_stfMat(1,1)   =    area*emlen
-        this%m_stfMat(2,2)   =    12.0*emlen3*ziz
-        this%m_stfMat(3,3)   =    12.0*emlen3*ziy
-        this%m_stfMat(4,4)   =    gmod*zix*Invlength
-        this%m_stfMat(5,5)   =    4.0*emlen*ziy
-        this%m_stfMat(6,6)   =    4.0*emlen*ziz
-
-        this%m_stfMat(2,6)   =    6.0*emlen2*ziz
-        this%m_stfMat(3,5)   =   -6.0*emlen2*ziy
-
-        this%m_stfMat(7,7)   =    this%m_stfMat(1,1)
-        this%m_stfMat(8,8)   =    this%m_stfMat(2,2)
-        this%m_stfMat(9,9)   =    this%m_stfMat(3,3)
-        this%m_stfMat(10,10) =    this%m_stfMat(4,4)
-        this%m_stfMat(11,11) =    this%m_stfMat(5,5)
-        this%m_stfMat(12,12) =    this%m_stfMat(6,6)
-
-        this%m_stfMat(1,7)   =   -this%m_stfMat(1,1)
-        this%m_stfMat(2,8)   =   -this%m_stfMat(2,2)
-        this%m_stfMat(2,12)  =    this%m_stfMat(2,6)
-        this%m_stfMat(3,9)   =   -this%m_stfMat(3,3)
-        this%m_stfMat(3,11)  =    this%m_stfMat(3,5)
-        this%m_stfMat(4,10)  =   -this%m_stfMat(4,4)
-        this%m_stfMat(5,9)   =   -this%m_stfMat(3,5)
-        this%m_stfMat(5,11)  =    this%m_stfMat(5,5)/2.0
-        this%m_stfMat(6,8)   =   -this%m_stfMat(2,6)
-        this%m_stfMat(6,12)  =    this%m_stfMat(6,6)/2.0
-
-        this%m_stfMat(8,12)  =   -this%m_stfMat(2,6)
-        this%m_stfMat(9,11)  =   -this%m_stfMat(3,5)
-
-        this%m_stfMat(6,2)   =    this%m_stfMat(2,6)
-        this%m_stfMat(5,3)   =    this%m_stfMat(3,5)
-        this%m_stfMat(7,1)   =    this%m_stfMat(1,7)
-        this%m_stfMat(8,2)   =    this%m_stfMat(2,8)
-        this%m_stfMat(12,2)  =    this%m_stfMat(2,12)
-        this%m_stfMat(9,3)   =    this%m_stfMat(3,9)
-        this%m_stfMat(11,3)  =    this%m_stfMat(3,11)
-        this%m_stfMat(10,4)  =    this%m_stfMat(4,10)
-        this%m_stfMat(9,5)   =    this%m_stfMat(5,9)
-        this%m_stfMat(11,5)  =    this%m_stfMat(5,11)
-        this%m_stfMat(8,6)   =    this%m_stfMat(6,8)
-        this%m_stfMat(12,6)  =    this%m_stfMat(6,12)
-        this%m_stfMat(12,8)  =    this%m_stfMat(8,12)
-        this%m_stfMat(11,9)  =    this%m_stfMat(9,11)
+        zix  = this%m_property(6)   ! St. Venant torsion constant Jt
+        ziy  = this%m_property(7)   ! Iy
+        ziz  = this%m_property(8)   ! Iz
+        length = this%len0
+    
+        this%m_stfMat(1:12,1:12)=0.0d0
+    
+        Invlength = 1.0d0/length
+    
+        ! shear correction factors
+        ksy = 5.0d0/6.0d0
+        ksz = 5.0d0/6.0d0
+    
+        ! Timoshenko shear parameters
+        phiy = 12.0d0*emod*ziz/(ksy*gmod*area*length*length)
+        phiz = 12.0d0*emod*ziy/(ksz*gmod*area*length*length)
+    
+        ! v-theta_z plane, bending about local z, use Iz
+        ky1 = 12.0d0*emod*ziz/(length**3*(1.0d0+phiy))
+        ky2 =  6.0d0*emod*ziz/(length**2*(1.0d0+phiy))
+        ky3 = (4.0d0+phiy)*emod*ziz/(length*(1.0d0+phiy))
+        ky4 = (2.0d0-phiy)*emod*ziz/(length*(1.0d0+phiy))
+    
+        ! w-theta_y plane, bending about local y, use Iy
+        kz1 = 12.0d0*emod*ziy/(length**3*(1.0d0+phiz))
+        kz2 =  6.0d0*emod*ziy/(length**2*(1.0d0+phiz))
+        kz3 = (4.0d0+phiz)*emod*ziy/(length*(1.0d0+phiz))
+        kz4 = (2.0d0-phiz)*emod*ziy/(length*(1.0d0+phiz))
+    
+        ! diagonal terms
+        this%m_stfMat(1,1)   = area*emod*Invlength
+        this%m_stfMat(2,2)   = ky1
+        this%m_stfMat(3,3)   = kz1
+        this%m_stfMat(4,4)   = gmod*zix*Invlength
+        this%m_stfMat(5,5)   = kz3
+        this%m_stfMat(6,6)   = ky3
+    
+        this%m_stfMat(7,7)   = this%m_stfMat(1,1)
+        this%m_stfMat(8,8)   = this%m_stfMat(2,2)
+        this%m_stfMat(9,9)   = this%m_stfMat(3,3)
+        this%m_stfMat(10,10) = this%m_stfMat(4,4)
+        this%m_stfMat(11,11) = this%m_stfMat(5,5)
+        this%m_stfMat(12,12) = this%m_stfMat(6,6)
+    
+        ! upper triangular terms
+        this%m_stfMat(1,7)   = -this%m_stfMat(1,1)
+    
+        this%m_stfMat(2,6)   =  ky2
+        this%m_stfMat(2,8)   = -ky1
+        this%m_stfMat(2,12)  =  ky2
+        this%m_stfMat(6,8)   = -ky2
+        this%m_stfMat(6,12)  =  ky4
+        this%m_stfMat(8,12)  = -ky2
+    
+        this%m_stfMat(3,5)   = -kz2
+        this%m_stfMat(3,9)   = -kz1
+        this%m_stfMat(3,11)  = -kz2
+        this%m_stfMat(5,9)   =  kz2
+        this%m_stfMat(5,11)  =  kz4
+        this%m_stfMat(9,11)  =  kz2
+    
+        this%m_stfMat(4,10)  = -this%m_stfMat(4,4)
+    
+        ! symmetric terms
+        this%m_stfMat(7,1)   = this%m_stfMat(1,7)
+    
+        this%m_stfMat(6,2)   = this%m_stfMat(2,6)
+        this%m_stfMat(8,2)   = this%m_stfMat(2,8)
+        this%m_stfMat(12,2)  = this%m_stfMat(2,12)
+        this%m_stfMat(8,6)   = this%m_stfMat(6,8)
+        this%m_stfMat(12,6)  = this%m_stfMat(6,12)
+        this%m_stfMat(12,8)  = this%m_stfMat(8,12)
+    
+        this%m_stfMat(5,3)   = this%m_stfMat(3,5)
+        this%m_stfMat(9,3)   = this%m_stfMat(3,9)
+        this%m_stfMat(11,3)  = this%m_stfMat(3,11)
+        this%m_stfMat(9,5)   = this%m_stfMat(5,9)
+        this%m_stfMat(11,5)  = this%m_stfMat(5,11)
+        this%m_stfMat(11,9)  = this%m_stfMat(9,11)
+    
+        this%m_stfMat(10,4)  = this%m_stfMat(4,10)
+    
         return
     end subroutine Segment_FormStiffMatrix
 
     subroutine Segment_FormGeomMatrix(this)
-        ! ELeMent GEOMetric stiffness matrix for a FRaMe
+        ! ELeMent GEOMetric stiffness matrix for Timoshenko FRaMe
+        ! https://people.duke.edu/~hpgavin/cee421/frame-finite-def.pdf
+        ! Henri Gavin, Department of Civil and Environmental Engineering, Duke University
+        ! For Euler-Bernoulli :
         ! ISBN 9781441929105 James F. Doyle. P217,228,229,405
         ! ISBN 9780792312086 James F. Doyle. P129,424
+        !
+        ! DOF order:
+        ! [u1,v1,w1,tx1,ty1,tz1,u2,v2,w2,tx2,ty2,tz2]
         implicit none
         class(Segment), intent(inout) :: this
-        real(8):: length
-        real(8):: s!s is axial forces
-        real(8):: emlenz,alpha
-        integer:: i
-
+    
+        real(8):: emod,gmod,area,zix,ziy,ziz,length
+        real(8):: s
+        real(8):: ksy,ksz,phiy,phiz
+        real(8):: gy1,gy2,gy3,gy4
+        real(8):: gz1,gz2,gz3,gz4
+        real(8):: gt
+    
         s = this%geoFRM
-
-        length  = this%len0
-
-        ! initialize all eg elements to zero
-        this%m_geoMat(1:12,1:12)=0.0d0
-        alpha   =   (s/length)*1.0d-6
-        emlenz  =   s/(30.0*length)
-        if (abs(alpha) .lt. 1.0e-10)then
-            alpha = 1.0e-10
-        endif
-        ! Frame
-        this%m_geoMat(1,1)   =    alpha
-        this%m_geoMat(2,2)   =    36*emlenz
-        this%m_geoMat(3,3)   =    36*emlenz
-        this%m_geoMat(4,4)   =    alpha
-        this%m_geoMat(5,5)   =    4.0*emlenz*length*length
-        this%m_geoMat(6,6)   =    4.0*emlenz*length*length
-
-        this%m_geoMat(2,6)   =    3.0*emlenz*length
-        this%m_geoMat(3,5)   =   -3.0*emlenz*length
-
-        ! Truss
-        ! this%m_geoMat(1,1)   =   alpha
-        ! this%m_geoMat(2,2)   =   emlenz
-        ! this%m_geoMat(3,3)   =   emlenz
-        ! this%m_geoMat(4,4)   =   alpha
-        ! this%m_geoMat(5,5)   =   0.0d0
-        ! this%m_geoMat(6,6)   =   0.0d0
-
-        this%m_geoMat(7,7)   =    this%m_geoMat(1,1)
-        this%m_geoMat(8,8)   =    this%m_geoMat(2,2)
-        this%m_geoMat(9,9)   =    this%m_geoMat(3,3)
-        this%m_geoMat(10,10) =    this%m_geoMat(4,4)
-        this%m_geoMat(11,11) =    this%m_geoMat(5,5)
-        this%m_geoMat(12,12) =    this%m_geoMat(6,6)
-
-        this%m_geoMat(1,7)   =   -this%m_geoMat(1,1)
-        this%m_geoMat(2,8)   =   -this%m_geoMat(2,2)
-        this%m_geoMat(2,12)  =    this%m_geoMat(2,6)
-        this%m_geoMat(3,9)   =   -this%m_geoMat(3,3)
-        this%m_geoMat(3,11)  =    this%m_geoMat(3,5)
-        this%m_geoMat(4,10)  =   -this%m_geoMat(4,4)
-        this%m_geoMat(5,9)   =   -this%m_geoMat(3,5)
-        this%m_geoMat(5,11)  =   -this%m_geoMat(5,5)/4.0
-        this%m_geoMat(6,8)   =   -this%m_geoMat(2,6)
-        this%m_geoMat(6,12)  =   -this%m_geoMat(6,6)/4.0
-
-        this%m_geoMat(8,12)  =   -this%m_geoMat(2,6)
-        this%m_geoMat(9,11)  =   -this%m_geoMat(3,5)
-
-        this%m_geoMat(6,2)   =    this%m_geoMat(2,6)
-        this%m_geoMat(5,3)   =    this%m_geoMat(3,5)
-        this%m_geoMat(7,1)   =    this%m_geoMat(1,7)
-        this%m_geoMat(8,2)   =    this%m_geoMat(2,8)
-        this%m_geoMat(12,2)  =    this%m_geoMat(2,12)
-        this%m_geoMat(9,3)   =    this%m_geoMat(3,9)
-        this%m_geoMat(11,3)  =    this%m_geoMat(3,11)
-        this%m_geoMat(10,4)  =    this%m_geoMat(4,10)
-        this%m_geoMat(9,5)   =    this%m_geoMat(5,9)
-        this%m_geoMat(11,5)  =    this%m_geoMat(5,11)
-        this%m_geoMat(8,6)   =    this%m_geoMat(6,8)
-        this%m_geoMat(12,6)  =    this%m_geoMat(6,12)
-        this%m_geoMat(12,8)  =    this%m_geoMat(8,12)
-        this%m_geoMat(11,9)  =    this%m_geoMat(9,11)
-
-        ! check diagonal terms
-        do    i=1,12
-            if (dabs(this%m_geoMat(i,i)) .lt. 1.0d-20) this%m_geoMat(i,i)=1.0d-20
-        enddo
+    
+        emod = this%m_property(1)
+        gmod = this%m_property(2)
+        area = this%m_property(3)
+    
+        ! zix = Jt, St. Venant torsion constant
+        ! ziy = Iy
+        ! ziz = Iz
+        zix  = this%m_property(6)
+        ziy  = this%m_property(7)
+        ziz  = this%m_property(8)
+    
+        length = this%len0
+    
+        ! initialize all geometric stiffness terms to zero
+        this%m_geoMat(1:12,1:12) = 0.0d0
+    
+        ! shear correction factors
+        ksy = 5.0d0/6.0d0
+        ksz = 5.0d0/6.0d0
+    
+        ! Timoshenko shear parameters
+        ! v-tz plane bends about local z, uses Iz
+        ! w-ty plane bends about local y, uses Iy
+        phiy = 12.0d0*emod*ziz/(ksy*gmod*area*length*length)
+        phiz = 12.0d0*emod*ziy/(ksz*gmod*area*length*length)
+    
+        ! ------------------------------------------------------------
+        ! v - theta_z plane, DOFs 2,6,8,12
+        ! ------------------------------------------------------------
+        gy1 = s/length * (6.0d0/5.0d0 + 2.0d0*phiy + phiy*phiy) / (1.0d0 + phiy)**2
+        gy2 = s/length * (length/10.0d0) / (1.0d0 + phiy)**2
+        gy3 = s/length * (2.0d0*length*length/15.0d0 + phiy*length*length/6.0d0 + phiy*phiy*length*length/12.0d0) / (1.0d0 + phiy)**2
+        gy4 = s/length * (-length*length/30.0d0 - phiy*length*length/6.0d0 - phiy*phiy*length*length/12.0d0) / (1.0d0 + phiy)**2
+    
+        this%m_geoMat(2,2)   =  gy1
+        this%m_geoMat(6,6)   =  gy3
+        this%m_geoMat(8,8)   =  gy1
+        this%m_geoMat(12,12) =  gy3
+    
+        this%m_geoMat(2,6)   =  gy2
+        this%m_geoMat(2,8)   = -gy1
+        this%m_geoMat(2,12)  =  gy2
+        this%m_geoMat(6,8)   = -gy2
+        this%m_geoMat(6,12)  =  gy4
+        this%m_geoMat(8,12)  = -gy2
+    
+        ! ------------------------------------------------------------
+        ! w - theta_y plane, DOFs 3,5,9,11
+        ! sign convention follows your elastic stiffness matrix
+        ! ------------------------------------------------------------
+        gz1 = s/length * (6.0d0/5.0d0 + 2.0d0*phiz + phiz*phiz) / (1.0d0 + phiz)**2
+        gz2 = s/length * (length/10.0d0) / (1.0d0 + phiz)**2
+        gz3 = s/length * (2.0d0*length*length/15.0d0 + phiz*length*length/6.0d0 + phiz*phiz*length*length/12.0d0) / (1.0d0 + phiz)**2
+        gz4 = s/length * (-length*length/30.0d0 - phiz*length*length/6.0d0 - phiz*phiz*length*length/12.0d0) / (1.0d0 + phiz)**2
+    
+        this%m_geoMat(3,3)   =  gz1
+        this%m_geoMat(5,5)   =  gz3
+        this%m_geoMat(9,9)   =  gz1
+        this%m_geoMat(11,11) =  gz3
+    
+        this%m_geoMat(3,5)   = -gz2
+        this%m_geoMat(3,9)   = -gz1
+        this%m_geoMat(3,11)  = -gz2
+        this%m_geoMat(5,9)   =  gz2
+        this%m_geoMat(5,11)  =  gz4
+        this%m_geoMat(9,11)  =  gz2
+    
+        ! ------------------------------------------------------------
+        ! torsional geometric stiffness
+        ! standard Timoshenko/frame form
+        ! ------------------------------------------------------------
+        gt = s*zix/(area*length)
+    
+        this%m_geoMat(4,4)   =  gt
+        this%m_geoMat(4,10)  = -gt
+        this%m_geoMat(10,10) =  gt
+    
+        ! ------------------------------------------------------------
+        ! symmetric terms
+        ! ------------------------------------------------------------
+        this%m_geoMat(6,2)   = this%m_geoMat(2,6)
+        this%m_geoMat(8,2)   = this%m_geoMat(2,8)
+        this%m_geoMat(12,2)  = this%m_geoMat(2,12)
+        this%m_geoMat(8,6)   = this%m_geoMat(6,8)
+        this%m_geoMat(12,6)  = this%m_geoMat(6,12)
+        this%m_geoMat(12,8)  = this%m_geoMat(8,12)
+    
+        this%m_geoMat(5,3)   = this%m_geoMat(3,5)
+        this%m_geoMat(9,3)   = this%m_geoMat(3,9)
+        this%m_geoMat(11,3)  = this%m_geoMat(3,11)
+        this%m_geoMat(9,5)   = this%m_geoMat(5,9)
+        this%m_geoMat(11,5)  = this%m_geoMat(5,11)
+        this%m_geoMat(11,9)  = this%m_geoMat(9,11)
+    
+        this%m_geoMat(10,4)  = this%m_geoMat(4,10)
+    
         return
     end subroutine Segment_FormGeomMatrix
 
-    subroutine Segment_RotateMatrix(this,l,m,n)
+    subroutine Segment_BuildAxisDirTriad(this,l,m,n,triad)
+        implicit none
+        class(Segment), intent(in) :: this
+        real(8), intent(in) :: l,m,n
+        real(8), intent(out) :: triad(3,3)
+        real(8) :: ex(3), ey(3), ez(3), dir(3), dd, proj
+
+        ex(1) = l
+        ex(2) = m
+        ex(3) = n
+        dd = dsqrt(dot_product(ex, ex))
+        if (dd .gt. 1.0d-14) then
+            ex = ex / dd
+        endif
+
+        dir(1:3) = this%spanDir(1:3)
+        dd = dsqrt(dot_product(dir, dir))
+        if (dd .gt. 1.0d-14) then
+            dir = dir / dd
+        endif
+        proj = dot_product(dir, ex)
+        ! Gram-Schmidt
+        ey = dir - proj * ex
+        dd = dsqrt(dot_product(ey, ey))
+
+        if (dd .le. 1.0d-10) then
+            if (dabs(ex(3)) .gt. 0.995d0) then
+                ey(1) = 0.0d0
+                ey(2) = 1.0d0
+                ey(3) =  0.0d0
+                ez(1) = -ex(3)
+                ez(2) = 0.0d0
+                ez(3) =  0.0d0
+            else
+                dd = dsqrt(ex(1)*ex(1)+ex(2)*ex(2))
+                ey(1) = -ex(2)/dd
+                ey(2) =  ex(1)/dd
+                ey(3) =  0.0d0
+                ez(1) = -ex(1)*ex(3)/dd
+                ez(2) = -ex(2)*ex(3)/dd
+                ez(3) =  dd
+            endif
+        else
+            ey = ey / dd
+            ez(1) = ex(2)*ey(3) - ex(3)*ey(2)
+            ez(2) = ex(3)*ey(1) - ex(1)*ey(3)
+            ez(3) = ex(1)*ey(2) - ex(2)*ey(1)
+            dd = dsqrt(dot_product(ez, ez))
+            if (dd .gt. 1.0d-14) then
+                ez = ez / dd
+            endif
+        endif
+
+        triad(1:3,1) = ex(1:3)
+        triad(1:3,2) = ey(1:3)
+        triad(1:3,3) = ez(1:3)
+        return
+    end subroutine Segment_BuildAxisDirTriad
+
+    subroutine Segment_RotateMatrix(this)
         ! ISBN 9780792312086 James F. Doyle. P83-85
         implicit none
         class(Segment), intent(inout) :: this
-        real(8):: l,m,n,beta,pi,sb,cb,d,Invd
-
-        beta = this%m_property(5)
-
-        pi=4.0*datan(1.0d0)
-        !
-        sb=dsin(beta*pi/180)
-        cb=dcos(beta*pi/180)
-        d=dsqrt(1.0-n**2)
-        Invd=1/d
-        ! if (abs(l).ge. 0.995 .and. abs(beta).le. 0.01) return
-        if (abs(n).gt.0.995) then
-            this%m_rotMat(1,1)  =  0.0
-            this%m_rotMat(1,2)  =  0.0
-            this%m_rotMat(1,3)  =  n
-            this%m_rotMat(2,1)  = -n*sb
-            this%m_rotMat(2,2)  =  cb
-            this%m_rotMat(2,3)  =  0.0
-            this%m_rotMat(3,1)  = -n*cb
-            this%m_rotMat(3,2)  = -sb
-            this%m_rotMat(3,3)  =  0.0
-        else
-            this%m_rotMat(1,1)  =  l
-            this%m_rotMat(1,2)  =  m
-            this%m_rotMat(1,3)  =  n
-            if (abs(beta) .le. 0.01) then
-                this%m_rotMat(2,1)  =  -m*Invd
-                this%m_rotMat(2,2)  =  l*Invd
-                this%m_rotMat(2,3)  =  0.0
-                this%m_rotMat(3,1)  =  -l*n*Invd
-                this%m_rotMat(3,2)  =  -m*n*Invd
-                this%m_rotMat(3,3)  =  d
-            else
-                this%m_rotMat(2,1)  =  -(m*cb+l*n*sb)*Invd
-                this%m_rotMat(2,2)  =  (l*cb-m*n*sb)*Invd
-                this%m_rotMat(2,3)  =  d*sb
-                this%m_rotMat(3,1)  =  (m*sb-l*n*cb)*Invd
-                this%m_rotMat(3,2)  =  -(l*sb+m*n*cb)*Invd
-                this%m_rotMat(3,3)  =  d*cb
-            endif
-        endif
+        this%m_rotMat(1:3,1:3) = transpose(this%triad_ee(1:3,1:3))
         return
     end subroutine Segment_RotateMatrix
 
@@ -867,33 +962,7 @@ module BeamStructure
     subroutine Segment_InitTriad_D(this)
         implicit none
         class(Segment), intent(inout) :: this
-        real(8):: xll,xmm,xnn
-        real(8):: dd
-
-        xll=this%xll0
-        xmm=this%xmm0
-        xnn=this%xnn0
-        dd=dsqrt(xll*xll+xmm*xmm)
-        this%triad_n1(1,1)=xll
-        this%triad_n1(2,1)=xmm
-        this%triad_n1(3,1)=xnn
-
-        if    (dd .lt. 0.001d0) then
-            this%triad_n1(1,2)=0.0d0
-            this%triad_n1(2,2)=1.0d0
-            this%triad_n1(3,2)=0.0d0
-            this%triad_n1(1,3)=-xnn
-            this%triad_n1(2,3)=0.00d0
-            this%triad_n1(3,3)=0.00d0
-        else
-            this%triad_n1(1,2)=-xmm/dd
-            this%triad_n1(2,2)=+xll/dd
-            this%triad_n1(3,2)=0.0d0
-
-            this%triad_n1(1,3)=-xll*xnn/dd
-            this%triad_n1(2,3)=-xmm*xnn/dd
-            this%triad_n1(3,3)= dd
-        endif
+        call Segment_BuildAxisDirTriad(this,this%xll0,this%xmm0,this%xnn0,this%triad_n1)
         ! all element triads have same initial orientation
         this%triad_n2(1:3,1:3)=this%triad_n1(1:3,1:3)
         this%triad_ee(1:3,1:3)=this%triad_n1(1:3,1:3)
@@ -902,7 +971,7 @@ module BeamStructure
 
     subroutine Segment_BodyStress_D(this)
         ! Element nodal force
-        ! ISBN 9781441929105 James F. Doyle. P353
+        ! ISBN 9781441929105 James F. Doyle. P214,P353
         implicit none
         class(Segment), intent(inout) :: this
         real(8) :: triad_00(3,3),triad_11(3,3),triad_22(3,3)
@@ -992,7 +1061,7 @@ module BeamStructure
         implicit none
         real(8):: triad_11(3,3),triad_22(3,3)
         real(8):: rr(3,3)
-        real(8):: tx,ty,tz, dtx,dty,dtz,c1,tt,sint
+        real(8):: tx,ty,tz, dtx,dty,dtz,theta,sint,trace_rr,factor
         integer:: i,j,k
         !
         ! get angle between two triads
@@ -1009,20 +1078,24 @@ module BeamStructure
         dty = (rr(1,3)-rr(3,1))/2.0d0
         dtz = (rr(2,1)-rr(1,2))/2.0d0
 
-        c1=1.0d0
+        trace_rr = rr(1,1) + rr(2,2) + rr(3,3)
+        trace_rr = (trace_rr - 1.0d0)/2.0d0
+        if (trace_rr .gt. 1.0d0) trace_rr = 1.0d0
+        if (trace_rr .lt. -1.0d0) trace_rr = -1.0d0
+
         sint = dsqrt(dtx*dtx+dty*dty+dtz*dtz)
+        theta = dacos(trace_rr)
 
-        if (sint .gt. 1.0d0) sint=1.0d0
-        tt = dasin(sint)
-        if ( sint .lt. 1.0d-6) then
-             c1=1.0d0
+        if (sint .lt. 1.0d-10 .or. theta .lt. 1.0d-10) then
+            tx = dtx
+            ty = dty
+            tz = dtz
         else
-             c1 = tt/sint
+            factor = theta/sint
+            tx = factor*dtx
+            ty = factor*dty
+            tz = factor*dtz
         endif
-
-        tx=c1*dtx
-        ty=c1*dty
-        tz=c1*dtz
 
         return
     end subroutine Segment_get_angle_triad
@@ -1038,6 +1111,10 @@ module BeamStructure
     end subroutine Segment_global_to_local
 
     subroutine Segment_UpdateTriad_D(this,dspnn)
+        ! update angle of  triads
+        ! ISBN 9781441929105 James F. Doyle. P184 Equ.(3.4)
+        ! triad_n1: the triad of node 1 in beam
+        ! triad_n2: the triad of node 2 in beam
         implicit none
         class(Segment), intent(inout) :: this
         real(8):: dspnn(1:6,1:m_npts)
@@ -1117,6 +1194,16 @@ module BeamStructure
             this%triad_ee(j,2)=triad_aa(j,2) - r2e1*(triad_aa(j,1)+this%triad_ee(j,1))/2.0d0
             this%triad_ee(j,3)=triad_aa(j,3) - r3e1*(triad_aa(j,1)+this%triad_ee(j,1))/2.0d0
         enddo
+        !
+        ! Gram-Schmidt
+        this%triad_ee(:,2) = this%triad_ee(:,2) - dot_product(this%triad_ee(:,2), this%triad_ee(:,1)) * this%triad_ee(:,1)
+        dd = dsqrt(dot_product(this%triad_ee(:,2), this%triad_ee(:,2)))
+        if (dd > 1.0d-14) this%triad_ee(:,2) = this%triad_ee(:,2) / dd
+        !
+        ! e3 = e1 × e2
+        this%triad_ee(:,3) = (/ this%triad_ee(2,1)*this%triad_ee(3,2)-this%triad_ee(3,1)*this%triad_ee(2,2), &
+                                this%triad_ee(3,1)*this%triad_ee(1,2)-this%triad_ee(1,1)*this%triad_ee(3,2), &
+                                this%triad_ee(1,1)*this%triad_ee(2,2)-this%triad_ee(2,1)*this%triad_ee(1,2) /)
         return
     end subroutine Segment_MakeTriad_ee
 

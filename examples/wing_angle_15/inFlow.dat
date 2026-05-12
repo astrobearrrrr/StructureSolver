@@ -1,0 +1,4 @@
+filename            Newmarkgamma                Newmarkbeta     dt          dampM1      dampK1    gamma1    alphaf1
+Wing.dat            0.5d0                       0.25d0          1.0d-4      0d0         0d0       1d0       0d0
+maxDynamic(step)    maxNewtonRaphson(iterMax)   dtol
+150                 12                          1d-8
