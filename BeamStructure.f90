@@ -251,7 +251,7 @@ module BeamStructure
             call m_elements(i)%InitTriad_D
             ! FormMass
             call m_elements(i)%FormMassMatrix
-            call m_elements(i)%RotateMatrix(m_elements(i)%xll0,m_elements(i)%xmm0,m_elements(i)%xnn0)
+            call m_elements(i)%RotateMatrix
             call m_elements(i)%RKR(m_elements(i)%m_masMat)
         enddo
 
@@ -417,7 +417,7 @@ module BeamStructure
         !update m_coefMat
         call this%FormGeomMatrix
 
-        call this%RotateMatrix(this%xll1,this%xmm1,this%xnn1)
+        call this%RotateMatrix
 
         call this%RKR(this%m_stfMat)
 
@@ -835,51 +835,70 @@ module BeamStructure
         return
     end subroutine Segment_FormGeomMatrix
 
-    subroutine Segment_RotateMatrix(this,l,m,n)
+    subroutine Segment_BuildAxisDirTriad(this,l,m,n,triad)
+        implicit none
+        class(Segment), intent(in) :: this
+        real(8), intent(in) :: l,m,n
+        real(8), intent(out) :: triad(3,3)
+        real(8) :: ex(3), ey(3), ez(3), dir(3), dd, proj
+
+        ex(1) = l
+        ex(2) = m
+        ex(3) = n
+        dd = dsqrt(dot_product(ex, ex))
+        if (dd .gt. 1.0d-14) then
+            ex = ex / dd
+        endif
+
+        dir(1:3) = this%spanDir(1:3)
+        dd = dsqrt(dot_product(dir, dir))
+        if (dd .gt. 1.0d-14) then
+            dir = dir / dd
+        endif
+        proj = dot_product(dir, ex)
+        ! Gram-Schmidt
+        ey = dir - proj * ex
+        dd = dsqrt(dot_product(ey, ey))
+
+        if (dd .le. 1.0d-10) then
+            if (dabs(ex(3)) .gt. 0.995d0) then
+                ey(1) = 0.0d0
+                ey(2) = 1.0d0
+                ey(3) =  0.0d0
+                ez(1) = -ex(3)
+                ez(2) = 0.0d0
+                ez(3) =  0.0d0
+            else
+                dd = dsqrt(ex(1)*ex(1)+ex(2)*ex(2))
+                ey(1) = -ex(2)/dd
+                ey(2) =  ex(1)/dd
+                ey(3) =  0.0d0
+                ez(1) = -ex(1)*ex(3)/dd
+                ez(2) = -ex(2)*ex(3)/dd
+                ez(3) =  dd
+            endif
+        else
+            ey = ey / dd
+            ez(1) = ex(2)*ey(3) - ex(3)*ey(2)
+            ez(2) = ex(3)*ey(1) - ex(1)*ey(3)
+            ez(3) = ex(1)*ey(2) - ex(2)*ey(1)
+            dd = dsqrt(dot_product(ez, ez))
+            if (dd .gt. 1.0d-14) then
+                ez = ez / dd
+            endif
+        endif
+
+        triad(1:3,1) = ex(1:3)
+        triad(1:3,2) = ey(1:3)
+        triad(1:3,3) = ez(1:3)
+        return
+    end subroutine Segment_BuildAxisDirTriad
+
+    subroutine Segment_RotateMatrix(this)
         ! ISBN 9780792312086 James F. Doyle. P83-85
         implicit none
         class(Segment), intent(inout) :: this
-        real(8):: l,m,n,beta,pi,sb,cb,d,Invd
-
-        beta = this%m_property(5)
-
-        pi=4.0*datan(1.0d0)
-        !
-        sb=dsin(beta*pi/180)
-        cb=dcos(beta*pi/180)
-        d=dsqrt(1.0-n**2)
-        Invd=1/d
-        ! if (abs(l).ge. 0.995 .and. abs(beta).le. 0.01) return
-        if (abs(n).gt.0.995) then
-            this%m_rotMat(1,1)  =  0.0
-            this%m_rotMat(1,2)  =  0.0
-            this%m_rotMat(1,3)  =  n
-            this%m_rotMat(2,1)  = -n*sb
-            this%m_rotMat(2,2)  =  cb
-            this%m_rotMat(2,3)  =  0.0
-            this%m_rotMat(3,1)  = -n*cb
-            this%m_rotMat(3,2)  = -sb
-            this%m_rotMat(3,3)  =  0.0
-        else
-            this%m_rotMat(1,1)  =  l
-            this%m_rotMat(1,2)  =  m
-            this%m_rotMat(1,3)  =  n
-            if (abs(beta) .le. 0.01) then
-                this%m_rotMat(2,1)  =  -m*Invd
-                this%m_rotMat(2,2)  =  l*Invd
-                this%m_rotMat(2,3)  =  0.0
-                this%m_rotMat(3,1)  =  -l*n*Invd
-                this%m_rotMat(3,2)  =  -m*n*Invd
-                this%m_rotMat(3,3)  =  d
-            else
-                this%m_rotMat(2,1)  =  -(m*cb+l*n*sb)*Invd
-                this%m_rotMat(2,2)  =  (l*cb-m*n*sb)*Invd
-                this%m_rotMat(2,3)  =  d*sb
-                this%m_rotMat(3,1)  =  (m*sb-l*n*cb)*Invd
-                this%m_rotMat(3,2)  =  -(l*sb+m*n*cb)*Invd
-                this%m_rotMat(3,3)  =  d*cb
-            endif
-        endif
+        this%m_rotMat(1:3,1:3) = transpose(this%triad_ee(1:3,1:3))
         return
     end subroutine Segment_RotateMatrix
 
@@ -943,33 +962,7 @@ module BeamStructure
     subroutine Segment_InitTriad_D(this)
         implicit none
         class(Segment), intent(inout) :: this
-        real(8):: xll,xmm,xnn
-        real(8):: dd
-
-        xll=this%xll0
-        xmm=this%xmm0
-        xnn=this%xnn0
-        dd=dsqrt(xll*xll+xmm*xmm)
-        this%triad_n1(1,1)=xll
-        this%triad_n1(2,1)=xmm
-        this%triad_n1(3,1)=xnn
-
-        if    (dd .lt. 0.001d0) then
-            this%triad_n1(1,2)=0.0d0
-            this%triad_n1(2,2)=1.0d0
-            this%triad_n1(3,2)=0.0d0
-            this%triad_n1(1,3)=-xnn
-            this%triad_n1(2,3)=0.00d0
-            this%triad_n1(3,3)=0.00d0
-        else
-            this%triad_n1(1,2)=-xmm/dd
-            this%triad_n1(2,2)=+xll/dd
-            this%triad_n1(3,2)=0.0d0
-
-            this%triad_n1(1,3)=-xll*xnn/dd
-            this%triad_n1(2,3)=-xmm*xnn/dd
-            this%triad_n1(3,3)= dd
-        endif
+        call Segment_BuildAxisDirTriad(this,this%xll0,this%xmm0,this%xnn0,this%triad_n1)
         ! all element triads have same initial orientation
         this%triad_n2(1:3,1:3)=this%triad_n1(1:3,1:3)
         this%triad_ee(1:3,1:3)=this%triad_n1(1:3,1:3)
@@ -1197,6 +1190,16 @@ module BeamStructure
             this%triad_ee(j,2)=triad_aa(j,2) - r2e1*(triad_aa(j,1)+this%triad_ee(j,1))/2.0d0
             this%triad_ee(j,3)=triad_aa(j,3) - r3e1*(triad_aa(j,1)+this%triad_ee(j,1))/2.0d0
         enddo
+        !
+        ! Gram-Schmidt
+        this%triad_ee(:,2) = this%triad_ee(:,2) - dot_product(this%triad_ee(:,2), this%triad_ee(:,1)) * this%triad_ee(:,1)
+        dd = dsqrt(dot_product(this%triad_ee(:,2), this%triad_ee(:,2)))
+        if (dd > 1.0d-14) this%triad_ee(:,2) = this%triad_ee(:,2) / dd
+        !
+        ! e3 = e1 × e2
+        this%triad_ee(:,3) = (/ this%triad_ee(2,1)*this%triad_ee(3,2)-this%triad_ee(3,1)*this%triad_ee(2,2), &
+                                this%triad_ee(3,1)*this%triad_ee(1,2)-this%triad_ee(1,1)*this%triad_ee(3,2), &
+                                this%triad_ee(1,1)*this%triad_ee(2,2)-this%triad_ee(2,1)*this%triad_ee(1,2) /)
         return
     end subroutine Segment_MakeTriad_ee
 
