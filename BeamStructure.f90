@@ -279,7 +279,7 @@ module BeamStructure
                 if(dnorm .le. dtol) exit
             enddo
             ! open(unit = 111, file = 'disp_ele_2_BeamStructure.dat', position = 'append')
-            ! write(111,'(12E28.5)') m_elements(2)%x1(:)-m_elements(2)%x0(:)
+            ! write(111,'(12E28.5)') m_elements(50)%x1(7:12)-m_elements(50)%x0(7:12)
             ! close(111)
             call Beam_UpdateVelAcc(dspO, velO, accO, dsp, vel, acc)
         enddo
@@ -1061,7 +1061,7 @@ module BeamStructure
         implicit none
         real(8):: triad_11(3,3),triad_22(3,3)
         real(8):: rr(3,3)
-        real(8):: tx,ty,tz, dtx,dty,dtz,c1,tt,sint
+        real(8):: tx,ty,tz, dtx,dty,dtz,theta,sint,trace_rr,factor
         integer:: i,j,k
         !
         ! get angle between two triads
@@ -1078,20 +1078,24 @@ module BeamStructure
         dty = (rr(1,3)-rr(3,1))/2.0d0
         dtz = (rr(2,1)-rr(1,2))/2.0d0
 
-        c1=1.0d0
+        trace_rr = rr(1,1) + rr(2,2) + rr(3,3)
+        trace_rr = (trace_rr - 1.0d0)/2.0d0
+        if (trace_rr .gt. 1.0d0) trace_rr = 1.0d0
+        if (trace_rr .lt. -1.0d0) trace_rr = -1.0d0
+
         sint = dsqrt(dtx*dtx+dty*dty+dtz*dtz)
+        theta = dacos(trace_rr)
 
-        if (sint .gt. 1.0d0) sint=1.0d0
-        tt = dasin(sint)
-        if ( sint .lt. 1.0d-6) then
-             c1=1.0d0
+        if (sint .lt. 1.0d-10 .or. theta .lt. 1.0d-10) then
+            tx = dtx
+            ty = dty
+            tz = dtz
         else
-             c1 = tt/sint
+            factor = theta/sint
+            tx = factor*dtx
+            ty = factor*dty
+            tz = factor*dtz
         endif
-
-        tx=c1*dtx
-        ty=c1*dty
-        tz=c1*dtz
 
         return
     end subroutine Segment_get_angle_triad
