@@ -138,7 +138,7 @@ module BeamStructure
             do i=1,10000
                 read(fileiD,*) buffer
                 buffer = trim(buffer)
-                if(buffer(1:9) .eq. 'CONSTRAIN') exit
+                if(buffer(1:9) .eq. 'CONSTRAINT') exit
             enddo
             read(fileiD,*) m_npts
             do i = 1,m_npts

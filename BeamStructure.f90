@@ -7,17 +7,17 @@ module BeamStructure
     implicit none
     private
     integer, parameter :: nElmtDofs = 12
-    real(8) :: coeffs(0:7),dampM,dampK,gamma,alphaf
+    real(8) :: coeffs(0:7),dampM,dampK,gamma
     integer :: m_npts, m_nelmts, m_nmaterials, g_ndofs
-    character(LEN=20) :: m_meshfile
-    public :: Segment, Beam_initialise, Beam_Solve
+    character(LEN=40) :: m_meshfile
+    public :: Beam_initialise, Beam_Solve
     type :: Segment
         private
-        integer :: m_localToGlobal(1:nElmtDofs)
-        real(8) :: x0(1:nElmtDofs),x1(1:nElmtDofs),x2(1:nElmtDofs)
+        integer :: node0, node1, m_localToGlobal(1:nElmtDofs), itype, bc(1:nElmtDofs), spanN
+        real(8) :: x0(1:nElmtDofs),x1(1:nElmtDofs),xnxt(1:nElmtDofs)
         real(8) :: dx0, dy0, dz0, dx1, dy1, dz1, xll0, xmm0, xnn0, xll1, xmm1, xnn1, len0, len1
         real(8) :: spanL, spanR, spanDir(3)
-        real(8) :: bc(1:nElmtDofs), geoFRM
+        real(8) :: geoFRM
         real(8) :: triad_ee(3,3),triad_n1(3,3),triad_n2(3,3)
         real(8) :: m_property(1:8)
         real(8) :: m_coefMat(1:nElmtDofs, 1:nElmtDofs)
@@ -27,7 +27,8 @@ module BeamStructure
         real(8) :: m_geoMat(1:nElmtDofs, 1:nElmtDofs)
         real(8) :: m_rotMat(1:3, 1:3)
     contains
-        procedure :: init => Segment_init
+        procedure :: Init => Segment_Init
+        procedure :: cptdxyz1 => Segment_cptdxyz1
         procedure :: Multiply => Segment_Multiply
         procedure :: UpdateMatrix => Segment_UpdateMatrix
         procedure :: Preconditioned => Segment_Preconditioned
@@ -38,10 +39,12 @@ module BeamStructure
         procedure :: FormStiffMatrix => Segment_FormStiffMatrix
         procedure :: FormGeomMatrix => Segment_FormGeomMatrix
         procedure :: RotateMatrix => Segment_RotateMatrix
+        procedure :: MassMultiply => Segment_MassMultiply
         procedure :: RKR => Segment_RKR
         procedure :: BoundaryCond => Segment_BoundaryCond
-        procedure :: BodyStress => Segment_BodyStress_D
+        procedure :: BodyStress_D => Segment_BodyStress_D
         procedure :: InitTriad_D => Segment_InitTriad_D
+        procedure :: BuildAxisDirTriad => Segment_BuildAxisDirTriad
         procedure :: UpdateTriad_D => Segment_UpdateTriad_D
         procedure :: MakeTriad_ee => Segment_MakeTriad_ee
     end type Segment
@@ -49,131 +52,138 @@ module BeamStructure
     real(8), allocatable ::lodInte(:),lodExte(:),lodEffe(:),vBC(:)
 
   contains
-    subroutine Beam_initialise(filename, Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1, alphaf1)
+    subroutine Beam_initialise(filename, Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1)
         implicit none
-        character (LEN=20):: filename
-        real(8) :: Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1, alphaf1
+        character (LEN=40):: filename
+        real(8) :: Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1
         integer :: fileiD = 996
         character (LEN=1000):: buffer
-        real(8), allocatable :: xyz(:, :), material(:, :), boundary(:, :)
+        real(8), allocatable :: xyz(:, :), material(:, :)
+        integer, allocatable :: boundary(:, :)
         ! coefficients in the Newmark-beta method
-        coeffs(2) = 1. / (Newmarkbeta * dt)
+        coeffs(2) = 1.0d0 / (Newmarkbeta * dt)
         coeffs(1) = Newmarkgamma * coeffs(2)
         coeffs(0) = coeffs(2) / dt
-        coeffs(3) = 0.5 / Newmarkbeta - 1.
-        coeffs(4) = Newmarkgamma / Newmarkbeta - 1.
-        coeffs(5) = dt * (0.5 * Newmarkgamma / Newmarkbeta - 1.)
-        coeffs(6) = dt * (1. - Newmarkgamma)
+        coeffs(3) = 0.5d0 / Newmarkbeta - 1.0d0
+        coeffs(4) = Newmarkgamma / Newmarkbeta - 1.0d0
+        coeffs(5) = dt * (0.5d0 * Newmarkgamma / Newmarkbeta - 1.0d0)
+        coeffs(6) = dt * (1.0d0 - Newmarkgamma)
         coeffs(7) = dt * Newmarkgamma
         dampM = dampM1
         dampK = dampK1
         gamma = gamma1
-        alphaf = alphaf1
         ! load mesh information
         m_meshfile = filename
         open(unit=fileiD, file = filename )
             read(fileiD,*) buffer
             read(fileiD,*) m_npts, m_nelmts, m_nmaterials
+            g_ndofs = m_npts * 6
+            allocate(vBC(1:g_ndofs))
+            ! load points data
+            allocate(xyz(1:8, 1:m_npts))
+            call Beam_ReadPoints()
+            ! load matieral data
+            allocate(material(1:8, 1:m_nmaterials))
+            call Beam_ReadMaterials()
+            ! load boundary condition
+            allocate(boundary(1:6, 1:m_npts))
+            call Beam_ReadBoundary()
+            ! load and build elements
+            allocate(m_elements(1:m_nelmts))
+            call Beam_ReadBuildElements()
+            allocate(lodExte(1:g_ndofs))
+            call Beam_ReadExternalLoad()
         close(fileiD)
-        g_ndofs = m_npts * 6
-        allocate(vBC(1:g_ndofs))
-        ! load points data
-        allocate(xyz(1:8, 1:m_npts))
-        call Beam_ReadPoints(xyz)
-        ! load matieral data
-        allocate(material(1:8, 1:m_nmaterials))
-        call Beam_ReadMaterials(material)
-        ! load boundary condition
-        allocate(boundary(1:6, 1:m_npts))
-        call Beam_ReadBoundary(boundary)
-        ! load and build elements
-        allocate(m_elements(1:m_nelmts))
-        call Beam_ReadBuildElements(xyz, material, boundary)
-    end subroutine Beam_initialise
 
-    subroutine Beam_ReadPoints(xyz)
-        implicit none
-        real(8) :: xyz(1:8, 1:m_npts)
-        integer :: fileiD = 996, tmpid, i
-        character(LEN=1000) :: buffer
+    contains
 
-        open(unit=fileiD, file = m_meshfile )
-            do i=1,10000
-                read(fileiD,*) buffer
-                buffer = trim(buffer)
-                if(buffer(1:5) .eq. 'POINT') exit
-            enddo
-            read(fileiD,*) m_npts
+        subroutine Beam_ReadPoints()
+            implicit none
+            integer :: tmpid, i, nCheck
+            call FindSection('POINT')
+            read(fileiD,*) nCheck
+            if (nCheck /= m_npts) stop 'ERROR: POINT number inconsistent'
             do i = 1,m_npts
-                read(fileiD,*) tmpid,xyz(1,i),xyz(2,i),xyz(3,i),xyz(4,i),xyz(5,i),xyz(6,i),xyz(7,i),xyz(8,i)
+                read(fileiD,*) tmpid, xyz(1:8,i)
             enddo
-        close(fileiD)
-    end subroutine Beam_ReadPoints
+        end subroutine Beam_ReadPoints
 
-    subroutine Beam_ReadMaterials(material)
-        implicit none
-        real(8) :: material(1:8, 1:m_nmaterials)
-        integer :: fileiD = 996, tmpid, i
-        character(LEN=1000) :: buffer
-
-        open(unit=fileiD, file = m_meshfile )
-            do i=1,10000
-                read(fileiD,*) buffer
-                buffer = trim(buffer)
-                if(buffer(1:8) .eq. 'MATERIAL') exit
-            enddo
-            read(fileiD,*) m_nmaterials
+        subroutine Beam_ReadMaterials()
+            implicit none
+            integer :: tmpid, i, nCheck
+            call FindSection('MATERIAL')
+            read(fileiD,*) nCheck
+            if (nCheck /= m_nmaterials) stop 'ERROR: MATERIAL number inconsistent'
             do i = 1,m_nmaterials
                 read(fileiD,*) tmpid, material(1:8,i)
             enddo
-        close(fileiD)
-    end subroutine Beam_ReadMaterials
+        end subroutine Beam_ReadMaterials
 
-    subroutine Beam_ReadBoundary(boundary)
-        implicit none
-        real(8) :: boundary(1:6, 1:m_npts)
-        integer :: fileiD = 996, tmpid, i
-        character(LEN=1000) :: buffer
-
-        open(unit=fileiD, file = m_meshfile )
-            do i=1,10000
-                read(fileiD,*) buffer
-                buffer = trim(buffer)
-                if(buffer(1:9) .eq. 'CONSTRAIN') exit
-            enddo
-            read(fileiD,*) m_npts
+        subroutine Beam_ReadBoundary()
+            implicit none
+            integer :: tmpid, i, nCheck
+            call FindSection('CONSTRAINT')
+            read(fileiD,*) nCheck
+            if (nCheck /= m_npts) stop 'ERROR: CONSTRAINT number inconsistent'
             do i = 1,m_npts
                 read(fileiD,*) tmpid, boundary(1:6,i)
             enddo
-        close(fileiD)
-    end subroutine Beam_ReadBoundary
+        end subroutine Beam_ReadBoundary
 
-    subroutine Beam_ReadBuildElements(xyz, material, boundary)
-        implicit none
-        real(8) :: xyz(1:8, 1:m_npts), material(1:8, m_nmaterials), boundary(1:6, 1:m_npts)
-        integer :: fileiD = 996, tmpid, n, i, j, k, imat, itype
-        character(LEN=1000) :: buffer
-
-        open(unit=fileiD, file = m_meshfile )
-            do n=1,10000
-                read(fileiD,*) buffer
-                buffer = trim(buffer)
-                if(buffer(1:7).eq. 'ELEMENT') exit
-            enddo
-            read(fileiD,*) m_nelmts
+        subroutine Beam_ReadBuildElements()
+            implicit none
+            integer :: tmpid, n, i, j, k, imat, itype, spanN, nCheck
+            call FindSection('ELEMENT')
+            read(fileiD,*) nCheck
+            if (nCheck /= m_nelmts) stop 'ERROR: ELEMENT number inconsistent'
             do n=1,m_nelmts
-                read(fileiD,*) tmpid, i, j, k, itype, imat
+                read(fileiD,*) tmpid, i, j, k, itype, imat, spanN
                 if(1.le.tmpid .and. tmpid.le.m_nelmts) then
-                    call m_elements(tmpid)%init(i, j, xyz, material(1:8, imat), boundary)
+                    call m_elements(tmpid)%Init(i, j, itype, spanN, xyz, material(1:8, imat), boundary)
                 endif
             enddo
-        close(fileiD)
-    end subroutine Beam_ReadBuildElements
+        end subroutine Beam_ReadBuildElements
 
-    subroutine Segment_init(this, p0Id, p1Id, xyz, material, boundary)
+        subroutine Beam_ReadExternalLoad()
+            implicit none
+            integer :: tmpid, i, nCheck
+            call FindSection('EXTERNALLOAD')
+            read(fileiD,*) nCheck
+            if (nCheck /= m_npts) stop 'ERROR: EXTERNALLOAD number inconsistent'
+            do i = 1,m_npts
+                read(fileiD,*) tmpid, lodExte((i-1)*6+1:(i-1)*6+6)
+            enddo
+        end subroutine Beam_ReadExternalLoad
+
+        subroutine FindSection(sectionName)
+            implicit none
+            character(len=*), intent(in) :: sectionName
+            character(len=1000) :: line
+            integer :: ios
+        
+            rewind(fileiD)
+        
+            do
+                read(fileiD, *, iostat=ios) line
+                if (ios /= 0) exit
+        
+                if (trim(adjustl(line)) == trim(sectionName)) return
+            enddo
+        
+            write(*,*) 'ERROR: cannot find section ', trim(sectionName), ' in ', trim(filename)
+            stop
+        end subroutine FindSection
+        
+    end subroutine Beam_initialise
+
+    subroutine Segment_Init(this, p0Id, p1Id, itype_, spanN_, xyz, material, boundary)
         class(Segment), intent(inout) :: this
-        real(8), intent(in) :: xyz(1:8, 1:m_npts), material(1:8), boundary(1:6, 1:m_npts)
-        integer :: p0Id, p1Id, i, offset0, offset1
+        integer, intent(in) :: p0Id, p1Id, boundary(1:6, 1:m_npts), itype_, spanN_
+        real(8), intent(in) :: xyz(1:8, 1:m_npts), material(1:8)
+        integer :: i, offset0, offset1
+        real(8) :: dirc_norm
+        this%node0 = p0Id
+        this%node1 = p1Id
         ! material property
         this%m_property(1:8) = material(1:8)
         !local dof to global dof mapping
@@ -185,18 +195,24 @@ module BeamStructure
         enddo
         this%x0(1:3) = xyz(1:3, p0Id)
         this%x0(7:9) = xyz(1:3, p1Id)
+        this%x0(4:6) = 0.0d0
+        this%x0(10:12) = 0.0d0
+        this%bc(1:6) = boundary(1:6, p0Id)
+        this%bc(7:12) = boundary(1:6, p1Id)
+        this%itype = itype_
+        this%spanN = spanN_
         this%spanL = 0.5d0 * (xyz(4,p0Id) + xyz(4,p1Id))
         this%spanR = 0.5d0 * (xyz(5,p0Id) + xyz(5,p1Id))
         this%spanDir(1:3) = 0.5d0 * (xyz(6:8,p0Id) + xyz(6:8,p1Id))
-        do i=1,3
-            ! initialise angle dofs
-            this%x0(4:6) = 0.0d0
-            this%x0(10:12) = 0.0d0
-        enddo
+        dirc_norm = dsqrt(sum(this%spanDir**2))
+        if (dirc_norm .gt. 1d-10) then
+            this%spanDir = this%spanDir / dirc_norm
+        else
+            write(*,*) xyz(6:8,p0Id), "and", xyz(6:8,p1Id), "are opposite directions; no unique bisector exists."
+            stop
+        endif
         this%x1(1:12) = this%x0(1:12)
-        this%x2(1:12) = this%x1(1:12)
-        this%bc(1:6) = boundary(1:6, p0Id)
-        this%bc(7:12) = boundary(1:6, p1Id)
+        this%xnxt(1:12) = this%x1(1:12)
         this%dx0  = this%x0(7) - this%x0(1)
         this%dy0  = this%x0(8) - this%x0(2)
         this%dz0  = this%x0(9) - this%x0(3)
@@ -204,6 +220,12 @@ module BeamStructure
         this%xll0 = this%dx0/this%len0
         this%xmm0 = this%dy0/this%len0
         this%xnn0 = this%dz0/this%len0
+        call this%cptdxyz1()
+    end subroutine Segment_Init
+
+    subroutine Segment_cptdxyz1(this)
+        implicit none
+        class(Segment), intent(inout) :: this
         this%dx1  = this%x1(7) - this%x1(1)
         this%dy1  = this%x1(8) - this%x1(2)
         this%dz1  = this%x1(9) - this%x1(3)
@@ -211,36 +233,14 @@ module BeamStructure
         this%xll1 = this%dx1/this%len1
         this%xmm1 = this%dy1/this%len1
         this%xnn1 = this%dz1/this%len1
-    end subroutine Segment_init
+    end subroutine Segment_cptdxyz1
 
     subroutine Beam_InitLoad
         implicit none
-        allocate(lodInte(1:g_ndofs),lodExte(1:g_ndofs),lodEffe(1:g_ndofs))
+        allocate(lodInte(1:g_ndofs),lodEffe(1:g_ndofs))
         lodInte(1:g_ndofs) = 0.0d0
-        call Beam_ReadExternalLoad
         lodEffe(1:g_ndofs) = 0.0d0
     end subroutine Beam_InitLoad
-    subroutine Beam_ReadExternalLoad
-        implicit none
-        real(8) :: load(1:6, 1:m_npts)
-        integer :: fileiD = 996, tmpid, i
-        character(LEN=1000) :: buffer
-
-        open(unit=fileiD, file = m_meshfile )
-            do i=1,10000
-                read(fileiD,*) buffer
-                buffer = trim(buffer)
-                if(buffer(1:12) .eq. 'EXTERNALLOAD') exit
-            enddo
-            read(fileiD,*) m_npts
-            do i = 1,m_npts
-                read(fileiD,*) tmpid, load(1:6,i)
-            enddo
-            do i = 1,m_npts
-                lodExte((i-1)*6+1:(i-1)*6+6) = load(1:6,i)
-            enddo
-        close(fileiD)
-    end subroutine Beam_ReadExternalLoad
 
     subroutine Beam_InitTriadANDFormMass
         implicit none
@@ -259,6 +259,8 @@ module BeamStructure
     end subroutine Beam_InitTriadANDFormMass
 
     subroutine Beam_Solve(maxDynamic, maxNewtonRaphson, dtol)
+        ! Nonlinear Algorithm: full Newton-Raphson method
+        ! ISBN 9781441929105 James F. Doyle. P354
         implicit none
         real(8) :: dspO(1:6, 1:m_npts), velO(1:6, 1:m_npts), accO(1:6, 1:m_npts)
         real(8) :: dsp(1:6, 1:m_npts), vel(1:6, 1:m_npts), acc(1:6, 1:m_npts)
@@ -325,13 +327,16 @@ module BeamStructure
         vel(1:6, 1:m_npts) = 0.0d0
         acc(1:6, 1:m_npts) = 0.0d0
     end subroutine Beam_InitDspVelAcc
+
     subroutine Beam_InitDspVelAccATTimeT(dspO, velO, accO, dsp, vel, acc)
         implicit none
         real(8), intent(inout) :: dspO(1:6, 1:m_npts), velO(1:6, 1:m_npts), accO(1:6, 1:m_npts)
         real(8), intent(inout) :: dsp(1:6, 1:m_npts), vel(1:6, 1:m_npts), acc(1:6, 1:m_npts)
         integer :: i
+        vBC=0.0d0
         do i=1,m_nelmts
-            vBC(m_elements(i)%m_localToGlobal(1:12))=m_elements(i)%x2(1:12)-m_elements(i)%x1(1:12)
+            ! displacement condition
+            vBC(m_elements(i)%m_localToGlobal(1:12))=m_elements(i)%xnxt(1:12)-m_elements(i)%x1(1:12)
         enddo
         dspO(1:6, 1:m_npts) = dsp(1:6, 1:m_npts)
         velO(1:6, 1:m_npts) = vel(1:6, 1:m_npts)
@@ -358,18 +363,12 @@ module BeamStructure
         enddo
         dsp(1:6, 1:m_npts) = dsp(1:6, 1:m_npts) + dspnn(1:6, 1:m_npts)
         do i = 1, m_nelmts
-            node0 = (m_elements(i)%m_localToGlobal(1)+5)/6
-            node1 = (m_elements(i)%m_localToGlobal(7)+5)/6
+            node0 = m_elements(i)%node0
+            node1 = m_elements(i)%node1
             ! UpdateElementPosition
             m_elements(i)%x1(1:6)  = m_elements(i)%x0(1:6)  + dsp(1:6, node0)
             m_elements(i)%x1(7:12) = m_elements(i)%x0(7:12) + dsp(1:6, node1)
-            m_elements(i)%dx1  = m_elements(i)%x1(7) - m_elements(i)%x1(1)
-            m_elements(i)%dy1  = m_elements(i)%x1(8) - m_elements(i)%x1(2)
-            m_elements(i)%dz1  = m_elements(i)%x1(9) - m_elements(i)%x1(3)
-            m_elements(i)%len1 = dsqrt(m_elements(i)%dx1*m_elements(i)%dx1+m_elements(i)%dy1*m_elements(i)%dy1+m_elements(i)%dz1*m_elements(i)%dz1)
-            m_elements(i)%xll1 = m_elements(i)%dx1/m_elements(i)%len1
-            m_elements(i)%xmm1 = m_elements(i)%dy1/m_elements(i)%len1
-            m_elements(i)%xnn1 = m_elements(i)%dz1/m_elements(i)%len1
+            call m_elements(i)%cptdxyz1
             ! UpdateNodeTriad
             call m_elements(i)%UpdateTriad_D(dspnn)
             ! MakeElementTriad
@@ -397,7 +396,7 @@ module BeamStructure
         lodInte = 0.0d0
         do i = 1, m_nelmts
             call m_elements(i)%FormStiffMatrix
-            call m_elements(i)%BodyStress
+            call m_elements(i)%BodyStress_D
             call m_elements(i)%UpdateMatrix
         enddo
         lodEffe = lodExte - lodInte
@@ -413,6 +412,9 @@ module BeamStructure
         ! [C]=dampM*[M]+dampK*[K]
         ! ISBN 9781441929105 James F. Doyle. P193,196
         ! K[T] = K[E] + gamma*K[G]
+        ! ISBN 9781441929105 James F. Doyle. P355
+        ! K[T] = K[E] + K[G]
+        ! K = K[T] + coeffs(1)*[C] + coeffs(0)*[M]
         class(Segment), intent(inout) :: this
         !update m_coefMat
         call this%FormGeomMatrix
@@ -437,33 +439,74 @@ module BeamStructure
         ! [C]=dampM*[M]+dampK*[K]
         ! ISBN 9781441929105 James F. Doyle. P268
         ! Newton-Raphson method
-        ! ISBN 9781441929105 James F. Doyle. P353: The book shows the full Newton-Raphson method with alpha=0.25 and delta=0.5
+        ! ISBN 9781441929105 James F. Doyle. P353 (5.11): The book shows the full Newton-Raphson method with alpha=0.25 and delta=0.5
+        ! ISBN 9787576318555 Dong Chunying. P142 (8.84)-(8.89)
         implicit none
         class(Segment), intent(inout) :: this
         real(8) :: b(1:g_ndofs)
         real(8) :: dspO(1:6, 1:m_npts)
         real(8) :: dsp(1:6, 1:m_npts), vel(1:6, 1:m_npts), acc(1:6, 1:m_npts)
-        real(8) :: mss(1:nElmtDofs),wk1(1:nElmtDofs),wk2(1:nElmtDofs)
+        real(8) :: qM(1:nElmtDofs), qC(1:nElmtDofs), qMC(1:nElmtDofs)
+        real(8) :: massLoad(1:nElmtDofs),dampKLoad(1:nElmtDofs)
         integer :: i,node0,node1
-        node0 = (this%m_localToGlobal(1)+5)/6
-        node1 = (this%m_localToGlobal(7)+5)/6
-        do i = 1,6
-            mss(i)   = (coeffs(0)*(dspO(i,node0)-dsp(i,node0))+coeffs(2)*vel(i,node0)+coeffs(3)*acc(i,node0))*this%m_masMat(i,i)   &
-                      +(coeffs(1)*(dspO(i,node0)-dsp(i,node0))+coeffs(4)*vel(i,node0)+coeffs(5)*acc(i,node0))*dampM*this%m_masMat(i,i)
-            mss(i+6) = (coeffs(0)*(dspO(i,node1)-dsp(i,node1))+coeffs(2)*vel(i,node1)+coeffs(3)*acc(i,node1))*this%m_masMat(i+6,i+6)   &
-                      +(coeffs(1)*(dspO(i,node1)-dsp(i,node1))+coeffs(4)*vel(i,node1)+coeffs(5)*acc(i,node1))*dampM*this%m_masMat(i+6,i+6)
+        node0 = this%node0
+        node1 = this%node1
+        do i = 1, 6
+            qM(i)   = coeffs(0)*(dspO(i,node0)-dsp(i,node0)) + coeffs(2)*vel(i,node0) + coeffs(3)*acc(i,node0)
+            qM(i+6) = coeffs(0)*(dspO(i,node1)-dsp(i,node1)) + coeffs(2)*vel(i,node1) + coeffs(3)*acc(i,node1)
+            qC(i)   = coeffs(1)*(dspO(i,node0)-dsp(i,node0)) + coeffs(4)*vel(i,node0) + coeffs(5)*acc(i,node0)
+            qC(i+6) = coeffs(1)*(dspO(i,node1)-dsp(i,node1)) + coeffs(4)*vel(i,node1) + coeffs(5)*acc(i,node1)
         enddo
-        call this%LocToGlobal(mss, b)
+        qMC = qM + dampM*qC
+        call this%MassMultiply(qMC, massLoad)
+        call this%LocToGlobal(massLoad, b)
         if (dampK .gt. 0.0d0) then
-            do i = 1,6
-                wk1(i)  = coeffs(1)*(dspO(i,node0)-dsp(i,node0)) + coeffs(4)*vel(i,node0) +coeffs(5)*acc(i,node0)
-                wk1(i+6)= coeffs(1)*(dspO(i,node1)-dsp(i,node1)) + coeffs(4)*vel(i,node1) +coeffs(5)*acc(i,node1)
-            enddo
-            wk2 = dampK*matmul(this%m_stfMat, wk1)
-            call this%LocToGlobal(wk2, b)
+            dampKLoad = dampK * matmul(this%m_stfMat, qC)
+            call this%LocToGlobal(dampKLoad, b)
         endif
         return
     end subroutine Segment_UpdateLoad
+
+    subroutine Segment_MassMultiply(this, q, mq)
+        ! Lumped beam mass matrix in 3-by-3 block form:
+        !
+        ! DOFs: [u1 v1 w1 | rx1 ry1 rz1 | u2 v2 w2 | rx2 ry2 rz2]
+        !
+        !               1:3      4:6      7:9     10:12
+        !            +--------+--------+--------+--------+
+        !      1:3   |  Mt1   |   0    |   0    |   0    |
+        !            +--------+--------+--------+--------+
+        !      4:6   |   0    |  Mr1   |   0    |   0    |
+        ! M =        +--------+--------+--------+--------+
+        !      7:9   |   0    |   0    |  Mt2   |   0    |
+        !            +--------+--------+--------+--------+
+        !     10:12  |   0    |   0    |   0    |  Mr2   |
+        !            +--------+--------+--------+--------+
+        !
+        ! Mt1 and Mt2 are isotropic translational blocks, Mt1=m1*I_3, Mt2=m2*I_3.
+        ! Mr1 and Mr2 are rotational inertia blocks and may be full 3-by-3 matrices after rotation to the global frame.
+        !
+        ! Hence:
+        !
+        !   M*q = [ Mt1*q(1:3),
+        !           Mr1*q(4:6),
+        !           Mt2*q(7:9),
+        !           Mr2*q(10:12) ].
+        implicit none
+        class(Segment), intent(in) :: this
+        real(8), intent(in)  :: q(1:nElmtDofs)
+        real(8), intent(out) :: mq(1:nElmtDofs)
+        integer :: i
+        mq(:) = 0.0d0
+        ! translational lumped massLoad blocks: m I_3
+        do i = 1, 3
+            mq(i)   = this%m_masMat(i,i)     * q(i)
+            mq(i+6) = this%m_masMat(i+6,i+6) * q(i+6)
+        enddo
+        ! rotational inertia blocks: full 3x3 after rotation
+        mq(4:6)   = matmul(this%m_masMat(4:6,4:6), q(4:6))
+        mq(10:12) = matmul(this%m_masMat(10:12,10:12), q(10:12))
+    end subroutine Segment_MassMultiply
 
     subroutine CG_Solve(x, b)
         ! Conjugate Gradient Method
@@ -574,31 +617,43 @@ module BeamStructure
     end subroutine Segment_Multiply
 
     subroutine Segment_FormMassMatrix(this)
-        ! ELeMent MASs matrix for the FRaMe
+        ! ELeMent MASs matrix for 3D Timoshenko FRaMe
         ! Same as Abaqus B31 Timoshenko frame
-        ! Lumped mass matrix
+        ! Lumped massLoad matrix
         ! ISBN 9781441929105 James F. Doyle. P273
         ! ISBN 9780792312086 James F. Doyle. P423
+        !
+        ! Rotary inertia about the local x-axis uses polar second moment Ip = Iy + Iz.
+        ! This is not generally equal to the St. Venant torsion constant Jt, except for circular sections.
         implicit none
         class(Segment), intent(inout) :: this
         real(8):: area,rho,zix,ziy,ziz,length
         real(8):: roal
 
-        area = this%m_property(3)
-        rho  = this%m_property(4)
-        zix  = this%m_property(6)
-        ziy  = this%m_property(7)
-        ziz  = this%m_property(8)
+        area = this%m_property(3) ! A    : cross-sectional area 
+        rho  = this%m_property(4) ! rho  : density
+        zix  = this%m_property(6) ! Jt   : St. Venant torsion constant, used in torsional stiffness G*Jt
+        ziy  = this%m_property(7) ! Iy   : second moment of area about local y-axis
+        ziz  = this%m_property(8) ! Iz   : second moment of area about local z-axis
         length  = this%len0
 
         this%m_masMat(1:12,1:12) = 0.0d0
         roal = rho*area*length/2.0d0
+        ! Translational lumped mass at node 0.
         this%m_masMat(1,1)     = roal
         this%m_masMat(2,2)     = roal
         this%m_masMat(3,3)     = roal
+
+        ! Rotary inertia per node.
+        ! The rotational inertia about the local beam axis uses the polar second
+        ! moment of area Ip = Iy + Iz, not the St. Venant torsion constant Jt.
+        ! For circular sections, Jt = Ip.
+        ! For rectangular sections, Jt generally differs from Ip, so (Iy + Iz) should be used here.
         this%m_masMat(4,4)     = roal*(ziy+ziz)/area
         this%m_masMat(5,5)     = roal*ziy/area
         this%m_masMat(6,6)     = roal*ziz/area
+
+        ! Lumped mass at node 1.
         this%m_masMat(7,7)     = this%m_masMat(1,1)
         this%m_masMat(8,8)     = this%m_masMat(2,2)
         this%m_masMat(9,9)     = this%m_masMat(3,3)
@@ -609,13 +664,16 @@ module BeamStructure
     end subroutine Segment_FormMassMatrix
 
     subroutine Segment_FormStiffMatrix(this)
-        ! ELeMent STiFfness for Timoshenko FRaMe
+        ! ELeMent STiFfness for 3D Timoshenko FRaMe
         ! calculates the element stiffness matrices.
         ! https://people.duke.edu/~hpgavin/cee421/frame-finite-def.pdf
         ! Henri Gavin, Department of Civil and Environmental Engineering, Duke University
         ! For Euler-Bernoulli :
         ! ISBN 9787040258417 Zeng Pan. P70
         ! ISBN 9780792312086 James F. Doyle. P81
+        !
+        ! The default shear correction factors ksy=ksz=5/6 are for rectangular sections.
+        ! Set phiy = phiz = 0 for Euler-Bernoulli beam behavior.
     
         implicit none
         class(Segment), intent(inout) :: this
@@ -626,23 +684,29 @@ module BeamStructure
         real(8):: ky1,ky2,ky3,ky4
         real(8):: kz1,kz2,kz3,kz4
     
-        emod = this%m_property(1)
-        gmod = this%m_property(2)
-        area = this%m_property(3)
-        zix  = this%m_property(6)   ! St. Venant torsion constant Jt
-        ziy  = this%m_property(7)   ! Iy
-        ziz  = this%m_property(8)   ! Iz
+        emod = this%m_property(1)   ! E   : Young's modulus
+        gmod = this%m_property(2)   ! G   : Shear modulus
+        area = this%m_property(3)   ! A   : cross-sectional area
+        zix  = this%m_property(6)   ! Jt  : St. Venant torsion constant, used in torsional stiffness G*Jt
+        ziy  = this%m_property(7)   ! Iy  : second moment of area about local y-axis
+        ziz  = this%m_property(8)   ! Iz  : second moment of area about local z-axis
+        ! Note that Jt is generally not equal to Iy+Iz except for circular sections.
+
         length = this%len0
     
         this%m_stfMat(1:12,1:12)=0.0d0
     
         Invlength = 1.0d0/length
     
-        ! shear correction factors
+        ! Shear correction factors; 5/6 is the rectangular-section default.
+        ! Replace with section-specific values, e.g. 6/7 for circular sections.
         ksy = 5.0d0/6.0d0
         ksz = 5.0d0/6.0d0
     
         ! Timoshenko shear parameters
+        ! v-theta_z plane: bending about local z, uses Iz and ksy.
+        ! w-theta_y plane: bending about local y, uses Iy and ksz.
+        ! For an Euler-Bernoulli beam, set phiy = phiz = 0.0d0.
         phiy = 12.0d0*emod*ziz/(ksy*gmod*area*length*length)
         phiz = 12.0d0*emod*ziy/(ksz*gmod*area*length*length)
     
@@ -715,12 +779,14 @@ module BeamStructure
     end subroutine Segment_FormStiffMatrix
 
     subroutine Segment_FormGeomMatrix(this)
-        ! ELeMent GEOMetric stiffness matrix for Timoshenko FRaMe
+        ! ELeMent GEOMetric stiffness matrix for 3D Timoshenko FRaMe
         ! https://people.duke.edu/~hpgavin/cee421/frame-finite-def.pdf
         ! Henri Gavin, Department of Civil and Environmental Engineering, Duke University
         ! For Euler-Bernoulli :
         ! ISBN 9781441929105 James F. Doyle. P217,228,229,405
         ! ISBN 9780792312086 James F. Doyle. P129,424
+        !
+        ! Uses the same section convention and shear parameters as Segment_FormStiffMatrix.
         !
         ! DOF order:
         ! [u1,v1,w1,tx1,ty1,tz1,u2,v2,w2,tx2,ty2,tz2]
@@ -735,35 +801,34 @@ module BeamStructure
         real(8):: gt
     
         s = this%geoFRM
-    
-        emod = this%m_property(1)
-        gmod = this%m_property(2)
-        area = this%m_property(3)
-    
-        ! zix = Jt, St. Venant torsion constant
-        ! ziy = Iy
-        ! ziz = Iz
-        zix  = this%m_property(6)
-        ziy  = this%m_property(7)
-        ziz  = this%m_property(8)
-    
+
+        emod = this%m_property(1)   ! E   : Young's modulus
+        gmod = this%m_property(2)   ! G   : Shear modulus
+        area = this%m_property(3)   ! A   : cross-sectional area
+        zix  = this%m_property(6)   ! Jt  : St. Venant torsion constant, used in torsional stiffness G*Jt
+        ziy  = this%m_property(7)   ! Iy  : second moment of area about local y-axis
+        ziz  = this%m_property(8)   ! Iz  : second moment of area about local z-axis
+        ! Note that Jt is generally not equal to Iy+Iz except for circular sections.
+
         length = this%len0
     
         ! initialize all geometric stiffness terms to zero
         this%m_geoMat(1:12,1:12) = 0.0d0
     
-        ! shear correction factors
+        ! Shear correction factors; 5/6 is the rectangular-section default.
+        ! Replace with section-specific values, e.g. 6/7 for circular sections.
         ksy = 5.0d0/6.0d0
         ksz = 5.0d0/6.0d0
     
         ! Timoshenko shear parameters
-        ! v-tz plane bends about local z, uses Iz
-        ! w-ty plane bends about local y, uses Iy
+        ! v-theta_z plane: bending about local z, uses Iz and ksy.
+        ! w-theta_y plane: bending about local y, uses Iy and ksz.
+        ! For an Euler-Bernoulli beam, set phiy = phiz = 0.0d0.
         phiy = 12.0d0*emod*ziz/(ksy*gmod*area*length*length)
         phiz = 12.0d0*emod*ziy/(ksz*gmod*area*length*length)
     
         ! ------------------------------------------------------------
-        ! v - theta_z plane, DOFs 2,6,8,12
+        ! v-theta_z plane, DOFs 2,6,8,12
         ! ------------------------------------------------------------
         gy1 = s/length * (6.0d0/5.0d0 + 2.0d0*phiy + phiy*phiy) / (1.0d0 + phiy)**2
         gy2 = s/length * (length/10.0d0) / (1.0d0 + phiy)**2
@@ -783,7 +848,7 @@ module BeamStructure
         this%m_geoMat(8,12)  = -gy2
     
         ! ------------------------------------------------------------
-        ! w - theta_y plane, DOFs 3,5,9,11
+        ! w-theta_y plane, DOFs 3,5,9,11
         ! sign convention follows your elastic stiffness matrix
         ! ------------------------------------------------------------
         gz1 = s/length * (6.0d0/5.0d0 + 2.0d0*phiz + phiz*phiz) / (1.0d0 + phiz)**2
@@ -836,30 +901,43 @@ module BeamStructure
     end subroutine Segment_FormGeomMatrix
 
     subroutine Segment_BuildAxisDirTriad(this,l,m,n,triad)
+        ! If span direction vector is not 0
+        ! ex: beam axis direction
+        ! ey: span direction
+        ! ez: ex cross product ey
+        ! If span direction vector is 0, initial triad method follows Doyle
+        ! Based on the rotation matrix [R]
+        ! [triad] = [R]^T
+        ! ISBN 9780792312086 James F. Doyle. P157,158
         implicit none
         class(Segment), intent(in) :: this
         real(8), intent(in) :: l,m,n
         real(8), intent(out) :: triad(3,3)
         real(8) :: ex(3), ey(3), ez(3), dir(3), dd, proj
 
+        ! ex: beam axis direction
         ex(1) = l
         ex(2) = m
         ex(3) = n
+        ! Normalization
         dd = dsqrt(dot_product(ex, ex))
         if (dd .gt. 1.0d-14) then
             ex = ex / dd
         endif
 
         dir(1:3) = this%spanDir(1:3)
+        ! Normalization
         dd = dsqrt(dot_product(dir, dir))
         if (dd .gt. 1.0d-14) then
             dir = dir / dd
         endif
         proj = dot_product(dir, ex)
+        ! ey: span direction
         ! Gram-Schmidt
         ey = dir - proj * ex
         dd = dsqrt(dot_product(ey, ey))
 
+        ! if no span direction, use 
         if (dd .le. 1.0d-10) then
             if (dabs(ex(3)) .gt. 0.995d0) then
                 ey(1) = 0.0d0
@@ -878,10 +956,13 @@ module BeamStructure
                 ez(3) =  dd
             endif
         else
+            ! Normalization
             ey = ey / dd
+            ! ex cross product ey
             ez(1) = ex(2)*ey(3) - ex(3)*ey(2)
             ez(2) = ex(3)*ey(1) - ex(1)*ey(3)
             ez(3) = ex(1)*ey(2) - ex(2)*ey(1)
+            ! Normalization
             dd = dsqrt(dot_product(ez, ez))
             if (dd .gt. 1.0d-14) then
                 ez = ez / dd
@@ -895,7 +976,9 @@ module BeamStructure
     end subroutine Segment_BuildAxisDirTriad
 
     subroutine Segment_RotateMatrix(this)
-        ! ISBN 9780792312086 James F. Doyle. P83-85
+        ! ISBN 9780792312086 James F. Doyle. P157,158
+        ! Based on the element triad [triad_ee]
+        ! [R] = [triad_ee]^T
         implicit none
         class(Segment), intent(inout) :: this
         this%m_rotMat(1:3,1:3) = transpose(this%triad_ee(1:3,1:3))
@@ -905,7 +988,8 @@ module BeamStructure
     subroutine Segment_RKR(this,ek)
         implicit none
         class(Segment), intent(inout) :: this
-        real(8):: r(3,3),rt(3,3),ktemp(12,12),ek(12,12)
+        real(8), intent(inout) :: ek(12,12)
+        real(8):: r(3,3),rt(3,3),ktemp(12,12)
         integer:: i,j,k,j1,j2,ii,jj,in,jn
         r = 0.0d0
         r = this%m_rotMat
@@ -919,11 +1003,11 @@ module BeamStructure
         !
         do  i=0,3
         do  j=0,3
+            j1=i*3
+            j2=j*3
             do    k=1,3
             do    ii=1,3
-                j1=i*3
-                j2=j*3
-                ktemp(j1+k,j2+ii)=0.0
+                ktemp(j1+k,j2+ii)=0.0d0
                 do     jj=1,3
                 ktemp(j1+k,j2+ii)=ktemp(j1+k,j2+ii)+ek(j1+k,j2+jj)*r(jj,ii)
                 enddo
@@ -931,7 +1015,7 @@ module BeamStructure
             enddo
             do  k=1,3
             do  ii=1,3
-                ek(j1+k,j2+ii)=0.0
+                ek(j1+k,j2+ii)=0.0d0
                 do  jj=1,3
                     ek(j1+k,j2+ii)=ek(j1+k,j2+ii)+rt(k,jj)*ktemp(j1+jj,j2+ii)
                 enddo
@@ -943,11 +1027,12 @@ module BeamStructure
     end subroutine Segment_RKR
 
     subroutine Segment_BoundaryCond(this,iter)
+        ! The method of multiplying by large numbers
         implicit none
         class(Segment), intent(inout) :: this
         integer :: i,iter
         do i=1,nElmtDofs
-            if (this%bc(i).gt.0.0d0)then
+            if (this%bc(i).gt.0)then
                 this%m_coefMat(i,i) = this%m_coefMat(i,i) * 1.0d20
                 if(iter.eq.1)then
                     lodEffe(this%m_localToGlobal(i))=this%m_coefMat(i,i)*vBC(this%m_localToGlobal(i)) &
@@ -971,6 +1056,9 @@ module BeamStructure
 
     subroutine Segment_BodyStress_D(this)
         ! Element nodal force
+        ! Calculate the lateral buckling instability caused by axial force
+        ! https://people.duke.edu/~hpgavin/cee421/frame-finite-def.pdf
+        ! Henri Gavin, Department of Civil and Environmental Engineering, Duke University
         ! ISBN 9781441929105 James F. Doyle. P214,P353
         implicit none
         class(Segment), intent(inout) :: this
@@ -1057,7 +1145,7 @@ module BeamStructure
 
     subroutine Segment_get_angle_triad(triad_11,triad_22,tx,ty,tz)
         ! GET ANGLE of between TRIADs
-        ! ISBN 9781441929105 James F. Doyle. P186
+        ! ISBN 9781441929105 James F. Doyle. P186,187 Equ.(3.7) (3.8)
         implicit none
         real(8):: triad_11(3,3),triad_22(3,3)
         real(8):: rr(3,3)
@@ -1104,6 +1192,8 @@ module BeamStructure
         implicit none
         real(8):: triad(3,3)
         real(8):: tx,ty,tz,tx2,ty2,tz2
+        ! [R] = [triad]^T
+        ! [g_angle] = [R]*[l_angle]
         tx2 = triad(1,1)*tx+triad(2,1)*ty+triad(3,1)*tz
         ty2 = triad(1,2)*tx+triad(2,2)*ty+triad(3,2)*tz
         tz2 = triad(1,3)*tx+triad(2,3)*ty+triad(3,3)*tz
@@ -1111,10 +1201,12 @@ module BeamStructure
     end subroutine Segment_global_to_local
 
     subroutine Segment_UpdateTriad_D(this,dspnn)
-        ! update angle of  triads
+        ! update angle of triads
+        ! Finite Rotation(Rodrique's formula) 
         ! ISBN 9781441929105 James F. Doyle. P184 Equ.(3.4)
-        ! triad_n1: the triad of node 1 in beam
-        ! triad_n2: the triad of node 2 in beam
+        ! triad_n1: the triad of node 1 in beam element
+        ! triad_n2: the triad of node 2 in beam element
+        ! For each beam element, calculate the current orientation triad: [triad] = [R][triad]
         implicit none
         class(Segment), intent(inout) :: this
         real(8):: dspnn(1:6,1:m_npts)
@@ -1122,8 +1214,8 @@ module BeamStructure
         real(8):: dtx1,dty1,dtz1
         integer:: node0,node1
 
-        node0 = (this%m_localToGlobal(1)+5)/6
-        node1 = (this%m_localToGlobal(7)+5)/6
+        node0 = this%node0
+        node1 = this%node1
         ! n1 node
         dtx1=dspnn(4,node0)
         dty1=dspnn(5,node0)
@@ -1209,7 +1301,7 @@ module BeamStructure
 
     subroutine Segment_FiniteRot(t1,t2,t3,rr)
         ! Finite rotation
-        ! ISBN 9781441929105 James F. Doyle. P184
+        ! ISBN 9781441929105 James F. Doyle. P184 Equ.(3.4)
         implicit none
         real(8):: rr(3,3),rr1(3,3),rr2(3,3),rr3(3,3)
         real(8):: t1,t2,t3,tt,ss,cc,c1,c2
@@ -1272,42 +1364,23 @@ end module BeamStructure
 program main
     use BeamStructure
     implicit none
-    ! character*1 ::     trans
-    ! real(8) :: alpha = 1., beta = 0.0
-    ! real(8) :: A(12, 12), x(12), y(12)
-    ! integer(8) :: i, j, m=12, lda=12, icx=1, icy=1
-    ! external         DGEMV, dsymv
-    ! do i = 1, 12
-    !     do j = 1, 12
-    !         A(i, j) = 0.
-    !     enddo
-    !     A(i, i) = 1.
-    !     x(i) = dble(i)
-    !     y(i) = 0.
-    ! enddo
-    ! trans(1:1) = "T"
-    ! write(*, *)x, trans
-    ! write(*, *) "======DGEMV======="
-    ! call DGEMV(trans, m, m, alpha, A, lda, x, icx, beta, y, icy)
-    ! write(*, *)y, trans
-    ! write(*, *) "======dsymv======="
-    ! trans(1:1) = "L"
-    ! call dsymv(trans, m, alpha, A, lda, x, icx, beta, y, icy)
-    ! write(*, *)y, trans
-
+    !
+    ! program algorithm: ISBN 9781441929105 James F. Doyle. P354
+    !
     ! static : ISBN 9787040258417 Zeng Pan. P45
-
+    !
     ! dynamic: ISBN 9787576318555 Dong Chunying. P146 8.2
-    character (LEN=20)::filename
+    !
+    character (LEN=40)::filename
     integer:: fileiD=111
-    real(8):: Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1, alphaf1, dtol
+    real(8):: Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1, dtol
     integer:: maxDynamic, maxNewtonRaphson
     open(unit=fileiD, file = 'inFlow.dat' )
         read(fileiD,*)
-        read(fileiD,*) filename, Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1, alphaf1
+        read(fileiD,*) filename, Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1
         read(fileiD,*)
         read(fileiD,*) maxDynamic, maxNewtonRaphson, dtol
     close(fileiD)
-    call Beam_initialise(filename, Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1, alphaf1)
+    call Beam_initialise(filename, Newmarkgamma, Newmarkbeta, dt, dampM1, dampK1, gamma1)
     call Beam_Solve(maxDynamic, maxNewtonRaphson, dtol)
 end program
