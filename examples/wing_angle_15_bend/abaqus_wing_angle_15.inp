@@ -113,7 +113,8 @@
 26,
 *Elset, elset=EALL, generate
 1, 50, 1
-** Beam axis is global +Z and section axis 1 follows the current Wing.dat dir vector: global +Y.
+** Beam axis is global +Z and section axis 1 follows the current Wing.dat dir vector:
+** (0.965925826289067979, -0.258819045102521017, 0.0)
 ** I11 maps to IA, I22 maps to IB, and J maps to IP from Wing.dat.
 *Beam General Section, elset=EALL, section=GENERAL, density=28.86836
 3.464E-2, 3.463796E-06, 0.0, 2.886666E-03, 1.3855187E-05

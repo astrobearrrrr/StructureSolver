@@ -9,7 +9,7 @@ Geometry:
 - `Lspan = 0.5 m`
 - `Rspan = 0.5 m`
 - Total span extension length: `1.0 m`
-- `dir` direction: `(0.0, 1.0, 0.0)`
+- `dir` direction: `(0.965925826289067979, -0.258819045102521017, 0.0)`
 
 Current `BeamStructure` triad convention:
 - Local `x` is the beam axis.
@@ -40,9 +40,9 @@ Boundary and load:
   - `Fx = 0.0`
   - `Fy = 0.0`
   - `Fz = 0.0`
-  - `Mx = 0.008`
-  - `My = 0.008`
-  - `Mz = 0.008`
+  - `XROT = 0.008`
+  - `YROT = 0.008`
+  - `ZROT = 0.008`
 
 Time integration from `inFlow.dat`:
 - Newmark: `gamma = 0.5`, `beta = 0.25`
@@ -63,7 +63,7 @@ Abaqus comparison:
 - Element type: `B31`
 - Section type: `*Beam General Section`
 - Beam axis is global `+Z`
-- Section axis `1` is set to global `+Y`
+- Section axis `1` follows the current `dir` vector `(0.965925826289067979, -0.258819045102521017, 0.0)`
 - Property mapping is:
   - `I11 = IA`
   - `I22 = IB`
