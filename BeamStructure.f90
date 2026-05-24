@@ -1047,7 +1047,7 @@ module BeamStructure
     subroutine Segment_InitTriad_D(this)
         implicit none
         class(Segment), intent(inout) :: this
-        call Segment_BuildAxisDirTriad(this,this%xll0,this%xmm0,this%xnn0,this%triad_n1)
+        call this%BuildAxisDirTriad(this%xll0,this%xmm0,this%xnn0,this%triad_n1)
         ! all element triads have same initial orientation
         this%triad_n2(1:3,1:3)=this%triad_n1(1:3,1:3)
         this%triad_ee(1:3,1:3)=this%triad_n1(1:3,1:3)
