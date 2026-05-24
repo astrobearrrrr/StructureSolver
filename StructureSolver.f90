@@ -200,6 +200,8 @@ subroutine StructureSolver(jBC,vBC,ele,prop,mss,xyzful0,xyzful,dspful,velful,acc
 !       ISBN 9787302388333 Xiong Zhang. P113-114
 !       [C]=dampM*[M]+dampK*[K]
 !       ISBN 9781441929105 James F. Doyle. P268
+!       Newton-Raphson method
+!       ISBN 9781441929105 James F. Doyle. P353: The book shows the full Newton-Raphson method with alpha=0.25 and delta=0.5
 !       -------------------------------------------------------------------
         do    i= 1, nEQ
             lodEffe(i)=lodExte(i)-lodInte(i)+(a0*(dspO(i)-dsp(i))+a2*vel(i)+a3*acc(i))*mss(i)   &
@@ -701,6 +703,7 @@ endsubroutine
 
 !    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !    update angle of  triads
+!    ISBN 9781441929105 James F. Doyle. P184 Equ.(3.4)
 !    triad_n1: the triad of node 1 in beam
 !    triad_n2: the triad of node 2 in beam
 !    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   
@@ -972,7 +975,7 @@ endsubroutine
 !   output: gforce global force
 !   geoFRM
 !   Element nodal force
-!   ISBN 9781441929105 James F. Doyle. P353
+!   ISBN 9781441929105 James F. Doyle. P214,P353
 !    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 subroutine body_stress_D(gforce,xord0,yord0,zord0,xord,yord,zord,ele,prop,triad_n1,triad_n2,triad_ee, &
                             nND,nEL,nEQ,nMT,geoFRM &
