@@ -22,7 +22,7 @@
 7850.
 *Elastic
 2.10E11, 0.30
-** local beam axis 1 is along global Y, local axis 2 is along global Z
+** Beam axis is global X; section axis 1 is global Y and section axis 2 is global Z.
 *Beam Section, elset=EALL, material=STEEL_RECT, section=RECT
 0.04, 0.02
 0., 1., 0.

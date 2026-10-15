@@ -1,4 +1,4 @@
-# Wing Angle 15
+# Wing Angle 0
 
 This case is a cantilever wing-like beam aligned with global `Z`.
 
@@ -59,7 +59,7 @@ Regression:
 - Baseline file: `old_fieldstat_BeamStructure.dat`
 
 Abaqus comparison:
-- Input file: `abaqus_wing_angle_15.inp`
+- Input file: `abaqus_wing_angle_0.inp`
 - Element type: `B31`
 - Section type: `*Beam General Section`
 - Beam axis is global `+Z`
