@@ -1,6 +1,6 @@
-# Wing Angle 15
+# Wing Angle 15: bending + torsion
 
-This case is a cantilever wing-like beam aligned with global `Z`.
+This case is a cantilever wing-like beam aligned with global `Z`, subjected to tip moments that produce bending and torsion.
 
 Geometry:
 - Beam length: `5.0 m`
@@ -40,9 +40,9 @@ Boundary and load:
   - `Fx = 0.0`
   - `Fy = 0.0`
   - `Fz = 0.0`
-  - `XROT = 0.008`
-  - `YROT = 0.008`
-  - `ZROT = 0.008`
+  - `Mx = 0.008` (`XROT` load component)
+  - `My = 0.008` (`YROT` load component)
+  - `Mz = 0.008` (`ZROT` load component)
 
 Time integration from `inFlow.dat`:
 - Newmark: `gamma = 0.5`, `beta = 0.25`

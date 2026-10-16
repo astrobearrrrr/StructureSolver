@@ -17,9 +17,9 @@ Model:
   - `G = 8.076923077e10 Pa`
   - `rho = 7850 kg/m^3`
 
-Loads at node 3:
-- `Fy = -100 N`
-- `Mx = 50 N*m`
+Boundary and loads:
+- Node `1` is fully fixed.
+- Node `3` carries `Fy = -100 N` and `Mx = 50 N*m`.
 
 Time integration:
 - `dt = 5.0e-4 s`
@@ -30,9 +30,11 @@ Expected comparison quantities:
 - node 2: `Uy`, `Rx`
 - node 3: `Uy`, `Rx`
 
-For this repository:
-- `StructureSolver` writes node 2 and node 3 displacements to `disp_ele_2_StructureSolver.dat`
-- `BeamStructure` writes the second element nodal displacement vector to `disp_ele_2_BeamStructure.dat`, which corresponds to node 2 and node 3
+Displacement history output:
+- The current root-level solvers have their displacement history output statements commented out; they write `fieldstat` files for regression testing.
+- To export histories from `StructureSolver`, enable the output block for `disp_ele_2_StructureSolver.dat`, which selects node `2` and node `3`.
+- To export histories from `BeamStructure`, enable and adapt the output block for `disp_ele_2_BeamStructure.dat` to select node `2` and node `3`. The current commented example selects the tip of element `50`, which does not exist in this two-element case.
+- Stored baseline histories are `old_disp_ele_2_StructureSolver.dat` and `old_disp_ele_2_BeamStructure.dat`.
 
 Abaqus file:
 - `abaqus_rect_bend_torsion.inp`
